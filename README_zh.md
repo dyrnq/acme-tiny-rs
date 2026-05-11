@@ -30,7 +30,8 @@ Rust 重写 [acme-tiny](https://github.com/diafygi/acme-tiny)，兼容全部 CLI
 从 [Releases](https://github.com/dyrnq/acme-tiny-rs/releases) 下载对应平台的二进制：
 
 ```sh
-curl -L -o acme-tiny-rs https://github.com/dyrnq/acme-tiny-rs/releases/latest/download/acme-tiny-rs-x86_64-unknown-linux-musl
+VER=$(curl -s https://api.github.com/repos/dyrnq/acme-tiny-rs/releases/latest | grep tag_name | cut -d'"' -f4) && \
+curl -L -o acme-tiny-rs "https://github.com/dyrnq/acme-tiny-rs/releases/download/${VER}/acme-tiny-rs-${VER}-x86_64-unknown-linux-musl"
 chmod +x acme-tiny-rs
 ```
 
