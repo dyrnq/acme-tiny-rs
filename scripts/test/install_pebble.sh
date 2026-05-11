@@ -59,5 +59,9 @@ EOF
 
 echo "Pebble installed: ${PEBBLE_DIR}/pebble"
 echo "Config: ${PEBBLE_DIR}/pebble-config.json"
+
+# Ensure files are readable by the user running tests (not just root)
+chmod -R a+rX "${PEBBLE_DIR}"
+
 "${PEBBLE_DIR}/pebble" -h 2>&1 | head -1 || true
 echo "=== Pebble installation complete ==="
