@@ -1072,6 +1072,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn test_parse_account_key_rsa() {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("rsa.key");
@@ -1088,6 +1089,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn test_parse_account_key_ec_p256() {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("ec.key");
@@ -1103,6 +1105,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn test_parse_account_key_ec_p384_sec1() {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("ec384.key");
@@ -1126,6 +1129,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn test_signing_roundtrip_rsa() {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("rsa.key");
@@ -1141,6 +1145,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn test_signing_roundtrip_ecdsa() {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("ec.key");
