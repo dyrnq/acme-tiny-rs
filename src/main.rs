@@ -174,6 +174,9 @@ async fn do_request(
     data: Option<Vec<u8>>,
     err_msg: &str,
 ) -> Result<(serde_json::Value, reqwest::StatusCode, reqwest::header::HeaderMap)> {
+    let data_str = data
+        .as_ref()
+        .map(|d| String::from_utf8_lossy(d).to_string());
     let resp = if let Some(body) = data {
         client
             .post(url)
@@ -207,7 +210,7 @@ async fn do_request(
     {
         bail!(
             "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nResponse: {json}",
-            data.as_ref().map_or("None", |d| std::str::from_utf8(d).unwrap_or("<binary>"))
+            data_str.as_deref().unwrap_or("None")
         );
     }
 
