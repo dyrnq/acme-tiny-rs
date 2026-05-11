@@ -197,6 +197,20 @@ async fn do_request(
     let json: serde_json::Value =
         serde_json::from_str(&body_text).unwrap_or(serde_json::Value::Null);
 
+    // Validate HTTP status (ACME success codes: 200, 201, 204)
+    if status != reqwest::StatusCode::OK
+        && status != reqwest::StatusCode::CREATED
+        && status != reqwest::StatusCode::NO_CONTENT
+        && !(status == reqwest::StatusCode::BAD_REQUEST
+            && json.get("type").and_then(|t| t.as_str())
+                .map_or(false, |t| t == "urn:ietf:params:acme:error:badNonce"))
+    {
+        bail!(
+            "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nResponse: {json}",
+            data.as_ref().map_or("None", |d| std::str::from_utf8(d).unwrap_or("<binary>"))
+        );
+    }
+
     Ok((json, status, headers))
 }
 
@@ -212,6 +226,19 @@ async fn send_signed_request(
     signing_key: &SigningKey,
     acct_location: &Option<String>,
     directory: &Directory,
+) -> Result<(serde_json::Value, reqwest::StatusCode, reqwest::header::HeaderMap)> {
+    send_signed_request_inner(client, url, payload, err_msg, signing_key, acct_location, directory, 0).await
+}
+
+async fn send_signed_request_inner(
+    client: &reqwest::Client,
+    url: &str,
+    payload: Option<&serde_json::Value>,
+    err_msg: &str,
+    signing_key: &SigningKey,
+    acct_location: &Option<String>,
+    directory: &Directory,
+    depth: u32,
 ) -> Result<(serde_json::Value, reqwest::StatusCode, reqwest::header::HeaderMap)> {
     let payload64 = match payload {
         None => String::new(),
@@ -263,8 +290,11 @@ async fn send_signed_request(
             .and_then(|t| t.as_str())
             .map_or(false, |t| t == "urn:ietf:params:acme:error:badNonce")
     {
-        return Box::pin(send_signed_request(
-            client, url, payload, err_msg, signing_key, acct_location, directory,
+        if depth >= 100 {
+            bail!("Too many badNonce retries");
+        }
+        return Box::pin(send_signed_request_inner(
+            client, url, payload, err_msg, signing_key, acct_location, directory, depth + 1,
         ))
         .await;
     }
