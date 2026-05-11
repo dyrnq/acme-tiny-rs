@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
+          # Linux x86_64 (glibc)
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             cross: false
@@ -33,6 +33,11 @@ jobs:
           # Linux aarch64 static (musl)
           - os: ubuntu-24.04
             target: aarch64-unknown-linux-musl
+            cross: true
+
+          # Linux aarch64 (glibc)
+          - os: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
             cross: true
 
           # Linux armv7 static (musl)
@@ -95,6 +100,7 @@ jobs:
           fi
 
       - name: Rename artifact
+        id: rename
         shell: bash
         run: |
           BIN="target/${{ matrix.target }}/release/${{ steps.binary.outputs.name }}"
@@ -146,6 +152,7 @@ jobs:
             - **x86_64-unknown-linux-gnu** — Linux x86_64 (glibc)
             - **x86_64-unknown-linux-musl** — Linux x86_64 (static musl)
             - **aarch64-unknown-linux-musl** — Linux ARM64 (static musl)
+            - **aarch64-unknown-linux-gnu** — Linux ARM64 (glibc, e.g. Graviton / Raspberry Pi Ubuntu)
             - **armv7-unknown-linux-musleabihf** — Linux ARMv7 (static musl)
             - **x86_64-apple-darwin** — macOS Intel
             - **aarch64-apple-darwin** — macOS Apple Silicon
