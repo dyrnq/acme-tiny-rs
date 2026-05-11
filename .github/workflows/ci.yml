@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    tags-ignore: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---- Unit tests (all platforms) ----
+  unit-tests:
+    name: Unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run unit tests
+        run: cargo test --release
+
+  # ---- Integration tests (Linux only, needs pebble) ----
+  integration-tests:
+    name: Integration (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Install pebble
+        run: |
+          sudo bash scripts/test/install_pebble.sh
+          echo "PEBBLE_DIR=/opt/pebble" >> "$GITHUB_ENV"
+
+      - name: Run integration tests
+        run: bash scripts/test/run_tests.sh

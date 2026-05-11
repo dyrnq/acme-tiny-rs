@@ -1,0 +1,66 @@
+[package]
+name = "acme-tiny-rs"
+version = "0.1.0"
+edition = "2021"
+description = "A tiny ACME client in Rust to issue and renew TLS certs from Let's Encrypt"
+authors = ["acme-tiny-rs contributors"]
+license = "MIT"
+repository = "https://github.com/acme-tiny-rs/acme-tiny-rs"
+readme = "README.md"
+
+[[bin]]
+name = "acme-tiny-rs"
+path = "src/main.rs"
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# HTTP client with rustls (no OpenSSL dependency)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# RSA key parsing and signing (native Rust, no OpenSSL)
+rsa = { version = "0.9", features = ["pem", "sha2"] }
+pkcs8 = { version = "0.10", features = ["pem"] }
+pkcs1 = "0.7"
+
+# ECDSA key support (P-256, P-384)
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+p384 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+signature = "2"
+
+# SHA-256/384 hashing
+sha2 = "0.10"
+
+# Base64 encoding (URL-safe, no padding)
+base64 = "0.22"
+
+# X.509 CSR parsing
+x509-parser = "0.17"
+
+# DER encoding for CSR
+der = "0.7"
+
+# Serde for JSON
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+anyhow = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization
+strip = true        # Strip symbols
+panic = "abort"     # Smaller binary
