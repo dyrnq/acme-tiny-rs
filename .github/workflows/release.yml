@@ -45,8 +45,8 @@ jobs:
             target: armv7-unknown-linux-musleabihf
             cross: true
 
-          # macOS x86_64
-          - os: macos-13
+          # macOS x86_64 (cross-compiled from Apple Silicon)
+          - os: macos-14
             target: x86_64-apple-darwin
             cross: false
 
