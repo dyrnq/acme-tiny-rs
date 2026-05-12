@@ -17,7 +17,7 @@ path = "src/main.rs"
 clap = { version = "4", features = ["derive"] }
 
 # HTTP client with rustls (no OpenSSL dependency)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 
 # RSA key parsing and signing (native Rust, no OpenSSL)
 rsa = { version = "0.9", features = ["pem", "sha2"] }
@@ -31,6 +31,8 @@ signature = "2"
 
 # SHA-256/384 hashing
 sha2 = "0.10"
+sha1 = "0.10"
+hmac = "0.12"
 
 # Base64 encoding (URL-safe, no padding)
 base64 = "0.22"

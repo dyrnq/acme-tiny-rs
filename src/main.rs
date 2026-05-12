@@ -25,6 +25,8 @@ use x509_parser::extensions::{ParsedExtension, GeneralName};
 const DEFAULT_DIRECTORY_URL: &str = "https://acme-v02.api.letsencrypt.org/directory";
 const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 
+mod dns;
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -71,6 +73,14 @@ struct Cli {
     /// What port to use when self-checking the challenge file
     #[arg(long = "check-port")]
     check_port: Option<u16>,
+
+    /// Challenge type: http-01 (default) or dns-01
+    #[arg(long = "challenge-type", default_value = "http-01")]
+    challenge_type: String,
+
+    /// DNS provider for dns-01 challenge: manual, cloudflare (cf)
+    #[arg(long = "dns-provider", default_value = "manual")]
+    dns_provider: String,
 
     /// Path to additional CA certificate bundle for TLS verification
     #[arg(long = "ca-bundle")]
@@ -160,7 +170,7 @@ impl SigningKey {
 // Helper: base64url encode without padding
 // ---------------------------------------------------------------------------
 
-fn b64(data: &[u8]) -> String {
+pub(crate) fn b64(data: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(data)
 }
 
@@ -777,14 +787,16 @@ async fn get_crt(
         }
         info!("Verifying {domain}...");
 
-        // Find http-01 challenge
+        let challenge_type = &cli.challenge_type;
+
+        // Find matching challenge
         let challenges = authorization["challenges"]
             .as_array()
             .ok_or_else(|| anyhow!("No challenges for {domain}"))?;
         let challenge = challenges
             .iter()
-            .find(|c| c["type"].as_str() == Some("http-01"))
-            .ok_or_else(|| anyhow!("No http-01 challenge for {domain}"))?;
+            .find(|c| c["type"].as_str() == Some(challenge_type))
+            .ok_or_else(|| anyhow!("No {challenge_type} challenge for {domain}"))?;
 
         let token = challenge["token"]
             .as_str()
@@ -802,49 +814,53 @@ async fn get_crt(
 
         let keyauthorization = format!("{cleaned_token}.{thumbprint}");
 
-        // Write challenge file
-        let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
-        fs::write(&wellknown_path, &keyauthorization)
-            .with_context(|| format!("Failed to write challenge file: {:?}", wellknown_path))?;
+        if challenge_type == "http-01" {
+            // HTTP-01: write file to .well-known/acme-challenge/
+            let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
+            fs::write(&wellknown_path, &keyauthorization)
+                .with_context(|| format!("Failed to write challenge file: {:?}", wellknown_path))?;
 
-        // Self-check the challenge
-        let check_port_str = cli
-            .check_port
-            .map(|p| format!(":{p}"))
-            .unwrap_or_default();
-        let wellknown_url = format!(
-            "http://{domain}{check_port_str}/.well-known/acme-challenge/{cleaned_token}"
-        );
-
-        if !cli.disable_check {
-            // Self-check: download the challenge file and compare with expected content
-            match client
-                .get(&wellknown_url)
-                .header("User-Agent", USER_AGENT)
-                .send()
-                .await
-            {
-                Ok(resp) => {
-                    let body_text = resp.text().await.unwrap_or_default();
-                    if body_text != keyauthorization {
+            if !cli.disable_check {
+                let check_port_str = cli
+                    .check_port
+                    .map(|p| format!(":{p}"))
+                    .unwrap_or_default();
+                let wellknown_url = format!(
+                    "http://{domain}{check_port_str}/.well-known/acme-challenge/{cleaned_token}"
+                );
+                match client
+                    .get(&wellknown_url)
+                    .header("User-Agent", USER_AGENT)
+                    .send()
+                    .await
+                {
+                    Ok(resp) => {
+                        let body_text = resp.text().await.unwrap_or_default();
+                        if body_text != keyauthorization {
+                            let _ = fs::remove_file(&wellknown_path);
+                            bail!(
+                                "Wrote file to {}, but couldn't download {}: unexpected content",
+                                wellknown_path.display(),
+                                wellknown_url
+                            );
+                        }
+                    }
+                    Err(e) => {
                         let _ = fs::remove_file(&wellknown_path);
                         bail!(
-                            "Wrote file to {}, but couldn't download {}: unexpected content",
+                            "Wrote file to {}, but couldn't download {}: {}",
                             wellknown_path.display(),
-                            wellknown_url
+                            wellknown_url,
+                            e
                         );
                     }
                 }
-                Err(e) => {
-                    let _ = fs::remove_file(&wellknown_path);
-                    bail!(
-                        "Wrote file to {}, but couldn't download {}: {}",
-                        wellknown_path.display(),
-                        wellknown_url,
-                        e
-                    );
-                }
             }
+        } else if challenge_type == "dns-01" {
+            let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
+            dns::create_provider(&cli.dns_provider)?.present(&domain, &txt_value)?;
+        } else {
+            bail!("Unsupported challenge type: {challenge_type}");
         }
 
         // Submit challenge
@@ -871,8 +887,15 @@ async fn get_crt(
         )
         .await?;
 
-        // Clean up challenge file
-        let _ = fs::remove_file(&wellknown_path);
+        // Clean up
+        if challenge_type == "http-01" {
+            let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
+            let _ = fs::remove_file(&wellknown_path);
+        } else if challenge_type == "dns-01" {
+            let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
+            let _ = dns::create_provider(&cli.dns_provider)
+                .and_then(|p| p.cleanup(&domain, &txt_value));
+        }
 
         if authorization["status"].as_str() != Some("valid") {
             bail!("Challenge did not pass for {domain}: {authorization}");
