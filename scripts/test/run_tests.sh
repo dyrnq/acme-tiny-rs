@@ -57,7 +57,7 @@ start_pebble || exit 1
 start_challenge_server 5002 "${TMPDIR}/challenges" || exit 1
 
 CHECK_PORT=5002
-BASE_ARGS="--directory-url ${DIRECTORY_URL} --check-port ${CHECK_PORT} --insecure"
+BASE_ARGS="--directory-url ${DIRECTORY_URL} --check-port ${CHECK_PORT} --insecure --agree-tos"
 
 # Helper for cert verification (usable in bash -c)
 cert_ok() { openssl x509 -in "$1" -text -noout 2>/dev/null | grep -q "${2:-Pebble}"; }

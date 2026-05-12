@@ -90,6 +90,10 @@ struct Cli {
     #[arg(long = "eab-hmac-key")]
     eab_hmac_key: Option<String>,
 
+    /// Agree to the CA's Terms of Service [default: true]
+    #[arg(long = "agree-tos", default_value_t = true)]
+    agree_tos: bool,
+
     /// Path to additional CA certificate bundle for TLS verification
     #[arg(long = "ca-bundle")]
     ca_bundle: Option<String>,
@@ -706,12 +710,12 @@ async fn get_crt(
 
     let mut reg_payload = if let Some(ref contact) = cli.contact {
         serde_json::json!({
-            "termsOfServiceAgreed": true,
+            "termsOfServiceAgreed": cli.agree_tos,
             "contact": contact,
         })
     } else {
         serde_json::json!({
-            "termsOfServiceAgreed": true,
+            "termsOfServiceAgreed": cli.agree_tos,
         })
     };
 
