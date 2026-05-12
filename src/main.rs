@@ -1047,6 +1047,17 @@ async fn main() -> Result<()> {
     // Parse CSR (replaces: openssl req -in csr -noout -text)
     let domains = parse_csr(&cli.csr)?;
 
+    // Wildcard domains require dns-01 challenge (RFC 8555 §8.4)
+    let has_wildcard = domains.iter().any(|d| d.starts_with("*."));
+    if has_wildcard && cli.challenge_type != "dns-01" {
+        bail!(
+            "Wildcard domain requires --challenge-type dns-01.\n\
+             Wildcard domains found: {}\n\
+             Add: --challenge-type dns-01 [--dns-provider <provider>]",
+            domains.iter().filter(|d| d.starts_with("*.")).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        );
+    }
+
     // Run ACME flow
     let certificate = get_crt(&cli, &signing_key, &domains).await?;
 
