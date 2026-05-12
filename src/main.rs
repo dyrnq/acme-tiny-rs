@@ -74,7 +74,7 @@ struct Cli {
     #[arg(long = "check-port")]
     check_port: Option<u16>,
 
-    /// Challenge type: http-01 (default) or dns-01
+    /// Challenge type: http-01 (default), dns-01, or dns-persist-01 (experimental, draft-ietf)
     #[arg(long = "challenge-type", default_value = "http-01")]
     challenge_type: String,
 
@@ -902,7 +902,7 @@ async fn get_crt(
                     }
                 }
             }
-        } else if challenge_type == "dns-01" {
+        } else if challenge_type == "dns-01" || challenge_type == "dns-persist-01" {
             let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
             dns::create_provider(&cli.dns_provider)?.present(&domain, &txt_value)?;
         } else {
@@ -943,6 +943,7 @@ async fn get_crt(
             let _ = dns::create_provider(&cli.dns_provider)
                 .and_then(|p| p.cleanup(&domain, &txt_value));
         }
+        // dns-persist-01: intentionally skip cleanup — record persists for future renewals
 
         // Check poll result
         let authorization = poll_result?;
@@ -1098,7 +1099,8 @@ async fn main() -> Result<()> {
 
     // Wildcard domains require dns-01 challenge (RFC 8555 §8.4)
     let has_wildcard = domains.iter().any(|d| d.starts_with("*."));
-    if has_wildcard && cli.challenge_type != "dns-01" {
+    let is_dns_challenge = cli.challenge_type == "dns-01" || cli.challenge_type == "dns-persist-01";
+    if has_wildcard && !is_dns_challenge {
         bail!(
             "Wildcard domain requires --challenge-type dns-01.\n\
              Wildcard domains found: {}\n\
