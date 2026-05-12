@@ -82,6 +82,14 @@ struct Cli {
     #[arg(long = "dns-provider", default_value = "manual")]
     dns_provider: String,
 
+    /// EAB Key Identifier (for External Account Binding)
+    #[arg(long = "eab-kid")]
+    eab_kid: Option<String>,
+
+    /// EAB HMAC Key (base64url-encoded, for External Account Binding)
+    #[arg(long = "eab-hmac-key")]
+    eab_hmac_key: Option<String>,
+
     /// Path to additional CA certificate bundle for TLS verification
     #[arg(long = "ca-bundle")]
     ca_bundle: Option<String>,
@@ -666,7 +674,37 @@ async fn get_crt(
     info!("Registering account...");
     let mut acct_location: Option<String> = None;
 
-    let reg_payload = if let Some(ref contact) = cli.contact {
+    // External Account Binding (RFC 8555 §7.3.4)
+    let eab = if let (Some(ref kid), Some(ref hmac_key)) = (&cli.eab_kid, &cli.eab_hmac_key) {
+        let jwk_json = serde_json::to_string(signing_key.jwk())?;
+        let eab_protected = serde_json::json!({
+            "alg": "HS256",
+            "kid": kid,
+            "url": directory.new_account,
+        });
+        let protected64 = b64(serde_json::to_string(&eab_protected)?.as_bytes());
+        let payload64 = b64(jwk_json.as_bytes());
+        let signing_input = format!("{protected64}.{payload64}");
+
+        let decoded_key = URL_SAFE_NO_PAD.decode(hmac_key.as_bytes())
+            .context("EAB HMAC key is not valid base64url")?;
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&decoded_key)
+            .context("EAB HMAC key invalid")?;
+        mac.update(signing_input.as_bytes());
+        let sig = mac.finalize().into_bytes();
+
+        Some(serde_json::json!({
+            "protected": protected64,
+            "payload": payload64,
+            "signature": b64(&sig),
+        }))
+    } else {
+        None
+    };
+
+    let mut reg_payload = if let Some(ref contact) = cli.contact {
         serde_json::json!({
             "termsOfServiceAgreed": true,
             "contact": contact,
@@ -676,6 +714,10 @@ async fn get_crt(
             "termsOfServiceAgreed": true,
         })
     };
+
+    if let Some(ref eab_obj) = eab {
+        reg_payload["externalAccountBinding"] = eab_obj.clone();
+    }
 
     let (_account, code, headers) = send_signed_request(
         &client,
