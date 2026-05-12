@@ -167,6 +167,22 @@ run_test "Error on non-existent domain" \
             > /dev/null 2>&1
     "
 
+# Verify challenge files are cleaned up after failure
+run_test "Cleanup challenge files on failure" \
+    bash -c "
+        ACME_DIR=${TMPDIR}/challenges/.well-known/acme-challenge/
+        # Run with a CSR that will create then fail a challenge
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/nonexistent.csr \
+            --acme-dir \${ACME_DIR} \
+            ${BASE_ARGS} \
+            > /dev/null 2>&1 || true
+        # Challenge directory should be empty after failure
+        remaining=\$(ls -A \${ACME_DIR} 2>/dev/null | wc -l)
+        [ \"\${remaining}\" -eq 0 ]
+    "
+
 # ==== Summary ====
 
 echo ""

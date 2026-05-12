@@ -909,31 +909,32 @@ async fn get_crt(
             bail!("Unsupported challenge type: {challenge_type}");
         }
 
-        // Submit challenge
-        send_signed_request(
-            &client,
-            challenge["url"].as_str().unwrap_or(""),
-            Some(&serde_json::json!({})),
-            &format!("Error submitting challenge for {domain}"),
-            signing_key,
-            &acct_location,
-            &directory,
-        )
-        .await?;
+        // Submit challenge + poll (wrapped so cleanup runs on failure too)
+        let poll_result = async {
+            send_signed_request(
+                &client,
+                challenge["url"].as_str().unwrap_or(""),
+                Some(&serde_json::json!({})),
+                &format!("Error submitting challenge for {domain}"),
+                signing_key,
+                &acct_location,
+                &directory,
+            )
+            .await?;
+            poll_until_not(
+                &client,
+                auth_url,
+                &["pending"],
+                &format!("Error checking challenge status for {domain}"),
+                signing_key,
+                &acct_location,
+                &directory,
+            )
+            .await
+        }
+        .await;
 
-        // Wait for challenge to complete
-        let authorization = poll_until_not(
-            &client,
-            auth_url,
-            &["pending"],
-            &format!("Error checking challenge status for {domain}"),
-            signing_key,
-            &acct_location,
-            &directory,
-        )
-        .await?;
-
-        // Clean up
+        // Clean up challenge (file or DNS) — always runs, success or failure
         if challenge_type == "http-01" {
             let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
             let _ = fs::remove_file(&wellknown_path);
@@ -943,6 +944,8 @@ async fn get_crt(
                 .and_then(|p| p.cleanup(&domain, &txt_value));
         }
 
+        // Check poll result
+        let authorization = poll_result?;
         if authorization["status"].as_str() != Some("valid") {
             bail!("Challenge did not pass for {domain}: {authorization}");
         }
