@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use log::{info, LevelFilter};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs8::DecodePrivateKey;
@@ -28,6 +28,7 @@ const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 mod dns;
 mod hook;
 mod challenge;
+mod commands;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -44,15 +45,15 @@ mod challenge;
 struct Cli {
     /// Path to your Let's Encrypt account private key
     #[arg(long = "account-key")]
-    account_key: String,
+    account_key: Option<String>,
 
     /// Path to your certificate signing request (CSR)
     #[arg(long = "csr")]
-    csr: String,
+    csr: Option<String>,
 
     /// Path to the .well-known/acme-challenge/ directory
     #[arg(long = "acme-dir")]
-    acme_dir: String,
+    acme_dir: Option<String>,
 
     /// Suppress output except for errors
     #[arg(long = "quiet")]
@@ -134,6 +135,26 @@ struct Cli {
     /// Disable TLS certificate verification (testing only)
     #[arg(long = "insecure", hide = true)]
     insecure: bool,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand)]
+enum Commands {
+    /// ARI renewal info check for a certificate
+    Ari {
+        #[arg(long = "cert")]
+        cert: String,
+        #[arg(long = "directory-url", default_value = DEFAULT_DIRECTORY_URL)]
+        directory_url: String,
+    },
+    /// Print version information
+    Version,
 }
 
 // ---------------------------------------------------------------------------
@@ -908,7 +929,7 @@ async fn get_crt(
                 _standalone_server = Some(challenge::http::start(80, &cleaned_token, &keyauthorization).await?);
                 info!("Standalone HTTP server started on port 80 for {domain}");
             } else {
-                let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
+                let wellknown_path = Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
                 fs::write(&wellknown_path, &keyauthorization)
                     .with_context(|| format!("Failed to write challenge file: {:?}", wellknown_path))?;
 
@@ -983,7 +1004,7 @@ async fn get_crt(
 
         // Clean up challenge (file or DNS) — always runs, success or failure
         if challenge_type == "http-01" {
-            let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
+            let wellknown_path = Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
             let _ = fs::remove_file(&wellknown_path);
         }
         // http-standalone / tls-alpn-01: cleanup is automatic — server handle drops here
@@ -1004,7 +1025,7 @@ async fn get_crt(
 
     // Finalize the order with CSR
     info!("Signing certificate...");
-    let csr_der = get_csr_der(&cli.csr)?;
+    let csr_der = get_csr_der(cli.csr.as_deref().ok_or_else(|| anyhow!("--csr is required"))?)?;
     let finalize_payload = serde_json::json!({
         "csr": b64(&csr_der),
     });
@@ -1056,7 +1077,8 @@ async fn get_crt(
     info!("Certificate signed!");
 
     // --renew-hook, --deploy-hook, --notify-hook
-    let envs = hook::Hook::acme_env_vars(&cli.csr, &cli.csr, &domains[0]);
+    let csr_path = cli.csr.as_deref().unwrap_or("");
+    let envs = hook::Hook::acme_env_vars(csr_path, csr_path, &domains[0]);
     #[allow(unused_must_use)]
     {
         if let Some(ref cmd) = cli.renew_hook {
@@ -1156,11 +1178,19 @@ async fn main() -> Result<()> {
         .format_timestamp(None)
         .init();
 
+    // Dispatch subcommand
+    if let Some(cmd) = cli.command {
+        match cmd {
+            Commands::Version => return commands::version::run(),
+            Commands::Ari { cert, directory_url } => return commands::ari::run(&cert, &directory_url).await,
+        }
+    }
+
     // Parse account key — supports RSA (PKCS#1/PKCS#8), ECDSA P-256/P-384 (SEC1/PKCS#8)
-    let signing_key = parse_account_key(&cli.account_key)?;
+    let signing_key = parse_account_key(cli.account_key.as_deref().ok_or_else(|| anyhow!("--account-key is required"))?)?;
 
     // Parse CSR (replaces: openssl req -in csr -noout -text)
-    let domains = parse_csr(&cli.csr)?;
+    let domains = parse_csr(cli.csr.as_deref().ok_or_else(|| anyhow!("--csr is required"))?)?;
 
     // Wildcard domains require dns-01 challenge (RFC 8555 §8.4)
     let has_wildcard = domains.iter().any(|d| d.starts_with("*."));

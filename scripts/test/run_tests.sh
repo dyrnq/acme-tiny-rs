@@ -236,6 +236,19 @@ run_test "post-hook runs even on failure" \
         grep -q 'post-hook-ran' ${TMPDIR}/hook_post.log
     "
 
+# ==== Subcommands ====
+
+run_test "version subcommand" \
+    bash -c "
+        ${BINARY} version > ${TMPDIR}/version.out 2>/dev/null && \
+        grep -q 'acme-tiny-rs v' ${TMPDIR}/version.out
+    "
+
+run_test "ari subcommand --help" \
+    bash -c "
+        ${BINARY} ari --help 2>/dev/null | grep -q 'cert'
+    "
+
 # ==== Summary ====
 
 echo ""
