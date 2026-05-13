@@ -75,9 +75,13 @@ struct Cli {
     #[arg(long = "check-port")]
     check_port: Option<u16>,
 
-    /// Challenge type: http-01 (default), dns-01, or dns-persist-01 (experimental, draft-ietf)
+    /// Challenge type: http-01 (default), dns-01, or dns-persist-01
     #[arg(long = "challenge-type", default_value = "http-01")]
     challenge_type: String,
+
+    /// Use built-in HTTP server instead of writing challenge files (standalone mode)
+    #[arg(long = "standalone")]
+    standalone: bool,
 
     /// DNS provider for dns-01 challenge: manual, cloudflare (cf)
     #[arg(long = "dns-provider", default_value = "manual")]
@@ -659,6 +663,54 @@ fn build_http_client(cli: &Cli) -> Result<reqwest::Client> {
 }
 
 // ---------------------------------------------------------------------------
+// Standalone HTTP server for http-standalone challenge
+// ---------------------------------------------------------------------------
+
+async fn start_standalone_server(port: u16, token: &str, key_auth: &str) -> Result<tokio::task::JoinHandle<()>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let token = token.to_string();
+    let key_auth = key_auth.to_string();
+    let expected_path = format!("GET /.well-known/acme-challenge/{token} HTTP");
+    let response_ok = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{key_auth}",
+        key_auth.len()
+    );
+    let response_404 = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await
+        .with_context(|| format!("Failed to bind port {port} for standalone server"))?;
+
+    info!("Standalone HTTP server listening on port {port}");
+
+    let handle = tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((mut stream, _)) => {
+                    let mut buf = [0u8; 512];
+                    if let Ok(Ok(n)) = tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        stream.read(&mut buf),
+                    ).await {
+                        let req = std::str::from_utf8(&buf[..n]).unwrap_or("");
+                        let resp = if req.starts_with(&expected_path) {
+                            response_ok.as_bytes()
+                        } else {
+                            response_404.as_bytes()
+                        };
+                        let _ = stream.write_all(resp).await;
+                    }
+                }
+                Err(_) => break, // listener closed
+            }
+        }
+    });
+
+    Ok(handle)
+}
+
+// ---------------------------------------------------------------------------
 // Main ACME flow
 // ---------------------------------------------------------------------------
 
@@ -882,13 +934,19 @@ async fn get_crt(
 
         let keyauthorization = format!("{cleaned_token}.{thumbprint}");
 
-        if challenge_type == "http-01" {
-            // HTTP-01: write file to .well-known/acme-challenge/
-            let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
-            fs::write(&wellknown_path, &keyauthorization)
-                .with_context(|| format!("Failed to write challenge file: {:?}", wellknown_path))?;
+        // Standalone server handle — must live until after validation
+        let mut _standalone_server: Option<tokio::task::JoinHandle<()>> = None;
 
-            if !cli.disable_check {
+        if challenge_type == "http-01" {
+            if cli.standalone {
+                _standalone_server = Some(start_standalone_server(80, &cleaned_token, &keyauthorization).await?);
+                info!("Standalone HTTP server started on port 80 for {domain}");
+            } else {
+                let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
+                fs::write(&wellknown_path, &keyauthorization)
+                    .with_context(|| format!("Failed to write challenge file: {:?}", wellknown_path))?;
+
+                if !cli.disable_check {
                 let check_port_str = cli
                     .check_port
                     .map(|p| format!(":{p}"))
@@ -924,6 +982,7 @@ async fn get_crt(
                     }
                 }
             }
+        }
         } else if challenge_type == "dns-01" || challenge_type == "dns-persist-01" {
             let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
             dns::create_provider(&cli.dns_provider)?.present(&domain, &txt_value)?;
@@ -960,7 +1019,9 @@ async fn get_crt(
         if challenge_type == "http-01" {
             let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
             let _ = fs::remove_file(&wellknown_path);
-        } else if challenge_type == "dns-01" {
+        }
+        // http-standalone: cleanup is automatic — server handle drops here
+        if challenge_type == "dns-01" {
             let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
             let _ = dns::create_provider(&cli.dns_provider)
                 .and_then(|p| p.cleanup(&domain, &txt_value));
