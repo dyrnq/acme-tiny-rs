@@ -1,12 +1,14 @@
 [package]
 name = "acme-tiny-rs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "A tiny ACME client in Rust to issue and renew TLS certs from Let's Encrypt"
 authors = ["acme-tiny-rs contributors"]
 license = "MIT"
 repository = "https://github.com/dyrnq/acme-tiny-rs"
 readme = "README.md"
+keywords = ["acme", "letsencrypt", "tls", "certificate", "ssl"]
+categories = ["command-line-utilities", "web-programming", "network-programming"]
 
 [[bin]]
 name = "acme-tiny-rs"
