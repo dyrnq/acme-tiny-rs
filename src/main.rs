@@ -22,13 +22,14 @@ use sha2::{Digest, Sha256};
 use x509_parser::prelude::FromDer;
 use x509_parser::extensions::{ParsedExtension, GeneralName};
 
-const DEFAULT_DIRECTORY_URL: &str = "https://acme-v02.api.letsencrypt.org/directory";
+const DEFAULT_SERVER: &str = "letsencrypt";
 const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 
 mod dns;
 mod hook;
 mod challenge;
 mod commands;
+mod ca;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -63,11 +64,24 @@ struct Cli {
     #[arg(long = "disable-check")]
     disable_check: bool,
 
-    /// Certificate authority directory URL (default: Let's Encrypt)
-    #[arg(long = "directory-url", default_value = DEFAULT_DIRECTORY_URL)]
-    directory_url: String,
+    /// ACME CA server — preset name or full URL (default: letsencrypt)
+    ///
+    /// Preset names: letsencrypt, letsencrypt-staging, zerossl,
+    ///               buypass, sslcom, google, step, pebble, pebble-eab
+    ///
+    /// Or provide a full URL: https://my-ca.example.com/directory
+    #[arg(long = "server", default_value = DEFAULT_SERVER)]
+    server: String,
 
-    /// DEPRECATED! Use --directory-url instead
+    /// Certificate authority directory URL (overrides --server)
+    #[arg(long = "directory-url")]
+    directory_url: Option<String>,
+
+    /// List all known CA presets and exit
+    #[arg(long = "list-ca")]
+    list_ca: bool,
+
+    /// DEPRECATED! Use --server or --directory-url instead
     #[arg(long = "ca")]
     ca: Option<String>,
 
@@ -140,6 +154,17 @@ struct Cli {
     command: Option<Commands>,
 }
 
+/// Resolve the directory URL from CLI args.
+/// Priority: --directory-url > --server (preset or URL) > --ca (deprecated)
+fn resolve_directory_url(cli: &Cli) -> Result<String> {
+    if let Some(ref url) = cli.directory_url {
+        return Ok(url.clone());
+    }
+    // --server can be a preset name or a full URL
+    let resolved = ca::resolve(&cli.server)?;
+    Ok(resolved.directory_url())
+}
+
 // ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
@@ -150,9 +175,13 @@ enum Commands {
     Ari {
         #[arg(long = "cert")]
         cert: String,
-        #[arg(long = "directory-url", default_value = DEFAULT_DIRECTORY_URL)]
-        directory_url: String,
+        #[arg(long = "directory-url")]
+        directory_url: Option<String>,
+        #[arg(long = "server", default_value = DEFAULT_SERVER)]
+        server: String,
     },
+    /// List all known ACME CA presets
+    ListCa,
     /// Print version information
     Version,
 }
@@ -757,13 +786,8 @@ async fn get_crt(
         b64(&Sha256::digest(canonical.as_bytes()))
     };
 
-    // Determine directory URL
-    let dir_url = if let Some(ref ca) = cli.ca {
-        info!("Using CA: {ca} (deprecated, use --directory-url instead)");
-        format!("{ca}/directory")
-    } else {
-        cli.directory_url.clone()
-    };
+    // Determine directory URL from --server/--directory-url/--ca
+    let dir_url = resolve_directory_url(cli)?;
 
     // Get ACME directory
     info!("Getting directory...");
@@ -1225,11 +1249,27 @@ async fn main() -> Result<()> {
         .format_timestamp(None)
         .init();
 
+    // --list-ca flag
+    if cli.list_ca {
+        ca::print_ca_table();
+        return Ok(());
+    }
+
     // Dispatch subcommand
     if let Some(cmd) = cli.command {
         match cmd {
             Commands::Version => return commands::version::run(),
-            Commands::Ari { cert, directory_url } => return commands::ari::run(&cert, &directory_url).await,
+            Commands::Ari { cert, directory_url, server } => {
+                let dir_url = directory_url
+                    .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_else(|| {
+                        ca::KNOWN_CAS.iter().find(|c| c.id == "letsencrypt").unwrap().directory_url.to_string()
+                    }));
+                return commands::ari::run(&cert, &dir_url).await;
+            }
+            Commands::ListCa => {
+                ca::print_ca_table();
+                return Ok(());
+            }
         }
     }
 
