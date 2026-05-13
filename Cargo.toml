@@ -59,6 +59,11 @@ anyhow = "1"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
+# TLS server (tls-alpn-01 standalone)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-rustls = "0.26"
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -75,7 +75,7 @@ struct Cli {
     #[arg(long = "check-port")]
     check_port: Option<u16>,
 
-    /// Challenge type: http-01 (default), dns-01, or dns-persist-01
+    /// Challenge type: http-01 (default), dns-01, tls-alpn-01, or dns-persist-01
     #[arg(long = "challenge-type", default_value = "http-01")]
     challenge_type: String,
 
@@ -711,6 +711,71 @@ async fn start_standalone_server(port: u16, token: &str, key_auth: &str) -> Resu
 }
 
 // ---------------------------------------------------------------------------
+// Standalone TLS-ALPN-01 server
+// ---------------------------------------------------------------------------
+
+use rustls::pki_types::pem::PemObject;
+
+async fn start_alpn_server(domain: &str, key_auth: &str) -> Result<tokio::task::JoinHandle<()>> {
+    use rcgen::{CertificateParams, KeyPair, CustomExtension};
+    use rustls::ServerConfig;
+    use sha2::Digest;
+    use std::sync::Arc;
+    use tokio::net::TcpListener;
+    use tokio_rustls::TlsAcceptor;
+
+    let domain = domain.to_string();
+    let alpn_protocol = b"acme-tls/1".to_vec();
+
+    // Compute SHA-256 of key authorization for acmeValidation extension
+    let digest = sha2::Sha256::digest(key_auth.as_bytes());
+
+    let key_pair = KeyPair::generate()?;
+    let mut params = CertificateParams::new(vec![domain.clone()])?;
+    params.distinguished_name = rcgen::DistinguishedName::new();
+    params.custom_extensions.push(CustomExtension::from_oid_content(
+        &[1, 3, 6, 1, 5, 5, 7, 1, 31],
+        digest.to_vec(),
+    ));
+
+    let cert = params.self_signed(&key_pair)?;
+    let cert_pem = cert.pem();
+    let key_pem = key_pair.serialize_pem();
+
+    let certs = rustls::pki_types::CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+        .collect::<Result<Vec<_>, _>>()?;
+    let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(key_pem.as_bytes())?;
+    
+    let mut config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| anyhow::anyhow!("TLS config error: {e}"))?;
+    config.alpn_protocols = vec![alpn_protocol];
+
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let listener = TcpListener::bind("0.0.0.0:443").await
+        .with_context(|| "Failed to bind port 443 for TLS-ALPN-01 server")?;
+
+    info!("TLS-ALPN-01 server listening on port 443 for {domain}");
+
+    let handle = tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let acceptor = acceptor.clone();
+                    tokio::spawn(async move {
+                        let _ = acceptor.accept(stream).await;
+                    });
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    Ok(handle)
+}
+
+// ---------------------------------------------------------------------------
 // Main ACME flow
 // ---------------------------------------------------------------------------
 
@@ -720,6 +785,10 @@ async fn get_crt(
     domains: &[String],
 ) -> Result<String> {
     let client = build_http_client(cli)?;
+
+    // Normalize challenge type to lowercase for case-insensitive matching
+    let challenge_type = cli.challenge_type.to_lowercase();
+    let challenge_type = challenge_type.as_str();
 
     // Compute JWK thumbprint (RFC 7638) — canonical JSON with sorted keys
     let thumbprint = {
@@ -937,7 +1006,10 @@ async fn get_crt(
         // Standalone server handle — must live until after validation
         let mut _standalone_server: Option<tokio::task::JoinHandle<()>> = None;
 
-        if challenge_type == "http-01" {
+        if challenge_type == "tls-alpn-01" {
+            _standalone_server = Some(start_alpn_server(&domain, &keyauthorization).await?);
+            info!("TLS-ALPN-01 server started on port 443 for {domain}");
+        } else if challenge_type == "http-01" {
             if cli.standalone {
                 _standalone_server = Some(start_standalone_server(80, &cleaned_token, &keyauthorization).await?);
                 info!("Standalone HTTP server started on port 80 for {domain}");
@@ -1020,7 +1092,7 @@ async fn get_crt(
             let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
             let _ = fs::remove_file(&wellknown_path);
         }
-        // http-standalone: cleanup is automatic — server handle drops here
+        // http-standalone / tls-alpn-01: cleanup is automatic — server handle drops here
         if challenge_type == "dns-01" {
             let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
             let _ = dns::create_provider(&cli.dns_provider)
@@ -1198,7 +1270,8 @@ async fn main() -> Result<()> {
 
     // Wildcard domains require dns-01 challenge (RFC 8555 §8.4)
     let has_wildcard = domains.iter().any(|d| d.starts_with("*."));
-    let is_dns_challenge = cli.challenge_type == "dns-01" || cli.challenge_type == "dns-persist-01";
+    let challenge_type = cli.challenge_type.to_lowercase();
+    let is_dns_challenge = challenge_type == "dns-01" || challenge_type == "dns-persist-01";
     if has_wildcard && !is_dns_challenge {
         bail!(
             "Wildcard domain requires --challenge-type dns-01.\n\
