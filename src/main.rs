@@ -27,6 +27,7 @@ const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 
 mod dns;
 mod hook;
+mod challenge;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -663,119 +664,6 @@ fn build_http_client(cli: &Cli) -> Result<reqwest::Client> {
 }
 
 // ---------------------------------------------------------------------------
-// Standalone HTTP server for http-standalone challenge
-// ---------------------------------------------------------------------------
-
-async fn start_standalone_server(port: u16, token: &str, key_auth: &str) -> Result<tokio::task::JoinHandle<()>> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
-    let token = token.to_string();
-    let key_auth = key_auth.to_string();
-    let expected_path = format!("GET /.well-known/acme-challenge/{token} HTTP");
-    let response_ok = format!(
-        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{key_auth}",
-        key_auth.len()
-    );
-    let response_404 = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await
-        .with_context(|| format!("Failed to bind port {port} for standalone server"))?;
-
-    info!("Standalone HTTP server listening on port {port}");
-
-    let handle = tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((mut stream, _)) => {
-                    let mut buf = [0u8; 512];
-                    if let Ok(Ok(n)) = tokio::time::timeout(
-                        std::time::Duration::from_secs(5),
-                        stream.read(&mut buf),
-                    ).await {
-                        let req = std::str::from_utf8(&buf[..n]).unwrap_or("");
-                        let resp = if req.starts_with(&expected_path) {
-                            response_ok.as_bytes()
-                        } else {
-                            response_404.as_bytes()
-                        };
-                        let _ = stream.write_all(resp).await;
-                    }
-                }
-                Err(_) => break, // listener closed
-            }
-        }
-    });
-
-    Ok(handle)
-}
-
-// ---------------------------------------------------------------------------
-// Standalone TLS-ALPN-01 server
-// ---------------------------------------------------------------------------
-
-use rustls::pki_types::pem::PemObject;
-
-async fn start_alpn_server(domain: &str, key_auth: &str) -> Result<tokio::task::JoinHandle<()>> {
-    use rcgen::{CertificateParams, KeyPair, CustomExtension};
-    use rustls::ServerConfig;
-    use sha2::Digest;
-    use std::sync::Arc;
-    use tokio::net::TcpListener;
-    use tokio_rustls::TlsAcceptor;
-
-    let domain = domain.to_string();
-    let alpn_protocol = b"acme-tls/1".to_vec();
-
-    // Compute SHA-256 of key authorization for acmeValidation extension
-    let digest = sha2::Sha256::digest(key_auth.as_bytes());
-
-    let key_pair = KeyPair::generate()?;
-    let mut params = CertificateParams::new(vec![domain.clone()])?;
-    params.distinguished_name = rcgen::DistinguishedName::new();
-    params.custom_extensions.push(CustomExtension::from_oid_content(
-        &[1, 3, 6, 1, 5, 5, 7, 1, 31],
-        digest.to_vec(),
-    ));
-
-    let cert = params.self_signed(&key_pair)?;
-    let cert_pem = cert.pem();
-    let key_pem = key_pair.serialize_pem();
-
-    let certs = rustls::pki_types::CertificateDer::pem_slice_iter(cert_pem.as_bytes())
-        .collect::<Result<Vec<_>, _>>()?;
-    let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(key_pem.as_bytes())?;
-    
-    let mut config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| anyhow::anyhow!("TLS config error: {e}"))?;
-    config.alpn_protocols = vec![alpn_protocol];
-
-    let acceptor = TlsAcceptor::from(Arc::new(config));
-    let listener = TcpListener::bind("0.0.0.0:443").await
-        .with_context(|| "Failed to bind port 443 for TLS-ALPN-01 server")?;
-
-    info!("TLS-ALPN-01 server listening on port 443 for {domain}");
-
-    let handle = tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    let acceptor = acceptor.clone();
-                    tokio::spawn(async move {
-                        let _ = acceptor.accept(stream).await;
-                    });
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    Ok(handle)
-}
-
-// ---------------------------------------------------------------------------
 // Main ACME flow
 // ---------------------------------------------------------------------------
 
@@ -1007,11 +895,11 @@ async fn get_crt(
         let mut _standalone_server: Option<tokio::task::JoinHandle<()>> = None;
 
         if challenge_type == "tls-alpn-01" {
-            _standalone_server = Some(start_alpn_server(&domain, &keyauthorization).await?);
+            _standalone_server = Some(challenge::tls_alpn::start(&domain, &keyauthorization).await?);
             info!("TLS-ALPN-01 server started on port 443 for {domain}");
         } else if challenge_type == "http-01" {
             if cli.standalone {
-                _standalone_server = Some(start_standalone_server(80, &cleaned_token, &keyauthorization).await?);
+                _standalone_server = Some(challenge::http::start(80, &cleaned_token, &keyauthorization).await?);
                 info!("Standalone HTTP server started on port 80 for {domain}");
             } else {
                 let wellknown_path = Path::new(&cli.acme_dir).join(&cleaned_token);
