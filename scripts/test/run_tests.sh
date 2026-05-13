@@ -183,6 +183,56 @@ run_test "Cleanup challenge files on failure" \
         [ \"\${remaining}\" -eq 0 ]
     "
 
+# ==== Hooks ====
+
+# Create a test hook script
+HOOK_SCRIPT="${TMPDIR}/test_hook.sh"
+cat > "${HOOK_SCRIPT}" << 'HOOKEOF'
+#!/bin/sh
+case "${ACME_HOOK:-}" in
+    pre)  echo "pre-hook-ran" ;;
+    post) echo "post-hook-ran" ;;
+    deploy) echo "deploy-hook-ran" ;;
+esac
+HOOKEOF
+chmod +x "${HOOK_SCRIPT}"
+
+run_test "pre-hook executes before ACME flow" \
+    bash -c "
+        ACME_HOOK=pre ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --pre-hook \"ACME_HOOK=pre ${HOOK_SCRIPT}\" \
+            > ${TMPDIR}/hook_test.crt 2>/dev/null && \
+        grep -q 'pre-hook-ran' ${TMPDIR}/hook_test.crt
+    "
+
+run_test "deploy-hook executes after cert issuance" \
+    bash -c "
+        ACME_HOOK=deploy ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --deploy-hook \"ACME_HOOK=deploy ${HOOK_SCRIPT}\" \
+            > ${TMPDIR}/hook_deploy.crt 2>/dev/null && \
+        grep -q 'deploy-hook-ran' ${TMPDIR}/hook_deploy.crt
+    "
+
+run_test "post-hook runs even on failure" \
+    bash -c "
+        ACME_HOOK=post ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/nonexistent.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --post-hook \"ACME_HOOK=post ${HOOK_SCRIPT}\" \
+            > ${TMPDIR}/hook_post.log 2>&1 || true
+        grep -q 'post-hook-ran' ${TMPDIR}/hook_post.log
+    "
+
 # ==== Summary ====
 
 echo ""

@@ -26,6 +26,7 @@ const DEFAULT_DIRECTORY_URL: &str = "https://acme-v02.api.letsencrypt.org/direct
 const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 
 mod dns;
+mod hook;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -93,6 +94,27 @@ struct Cli {
     /// Agree to the CA's Terms of Service [default: true]
     #[arg(long = "agree-tos", default_value_t = true)]
     agree_tos: bool,
+
+    // ---- Hooks (acme.sh compatible) ----
+    /// Command or script to run before obtaining any certificates
+    #[arg(long = "pre-hook")]
+    pre_hook: Option<String>,
+
+    /// Command or script to run after attempting obtain/renew
+    #[arg(long = "post-hook")]
+    post_hook: Option<String>,
+
+    /// Command or script to run after each successfully renewed certificate
+    #[arg(long = "renew-hook")]
+    renew_hook: Option<String>,
+
+    /// Command or script to run after certificate issuance to deploy
+    #[arg(long = "deploy-hook")]
+    deploy_hook: Option<String>,
+
+    /// Command or script to run for notifications
+    #[arg(long = "notify-hook")]
+    notify_hook: Option<String>,
 
     /// Path to additional CA certificate bundle for TLS verification
     #[arg(long = "ca-bundle")]
@@ -1005,6 +1027,22 @@ async fn get_crt(
     .await?;
 
     info!("Certificate signed!");
+
+    // --renew-hook, --deploy-hook, --notify-hook
+    let envs = hook::Hook::acme_env_vars(&cli.csr, &cli.csr, &domains[0]);
+    #[allow(unused_must_use)]
+    {
+        if let Some(ref cmd) = cli.renew_hook {
+            hook::Hook::Renew(cmd.clone()).run(&envs);
+        }
+        if let Some(ref cmd) = cli.deploy_hook {
+            hook::Hook::Deploy(cmd.clone()).run(&envs);
+        }
+        if let Some(ref cmd) = cli.notify_hook {
+            hook::Hook::Notify(cmd.clone()).run(&envs);
+        }
+    }
+
     Ok(certificate_pem)
 }
 
@@ -1109,8 +1147,18 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Run ACME flow
-    let certificate = get_crt(&cli, &signing_key, &domains).await?;
+    // Run ACME flow (post-hook runs regardless of success or failure)
+    // --pre-hook
+    #[allow(unused_must_use)]
+    if let Some(ref cmd) = cli.pre_hook {
+        hook::Hook::Pre(cmd.clone()).run(&[]);
+    }
+    let result = get_crt(&cli, &signing_key, &domains).await;
+    if let Some(ref cmd) = cli.post_hook {
+        #[allow(unused_must_use)]
+        let _ = hook::Hook::Post(cmd.clone()).run(&[]);
+    }
+    let certificate = result?;
 
     // Output certificate to stdout
     print!("{certificate}");
