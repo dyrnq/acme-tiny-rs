@@ -36,7 +36,9 @@ mod challenge;
 #[derive(Parser)]
 #[command(
     name = "acme-tiny-rs",
-    about = concat!("A tiny ACME client to issue and renew TLS certs from Let's Encrypt — v", env!("CARGO_PKG_VERSION")),
+    about = concat!("A tiny ACME client to issue and renew TLS certs from Let's Encrypt — v",
+        env!("CARGO_PKG_VERSION"),
+        " (", env!("GIT_HASH"), " ", env!("BUILD_TIME"), ")"),
     after_help = "Example:\n  acme-tiny-rs --account-key ./account.key --csr ./domain.csr --acme-dir /var/www/challenges/ > signed_chain.crt"
 )]
 struct Cli {
