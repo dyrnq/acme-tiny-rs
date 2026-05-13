@@ -20,7 +20,15 @@ A Rust port of [acme-tiny](https://github.com/diafygi/acme-tiny), fully compatib
 
 - **Single-file deployment**: `scp` one binary to your server — no Python or OpenSSL needed
 - **Key types**: RSA + ECDSA P-256/P-384 + Ed25519 account keys (auto-detected from PEM)
-  - **⚠️ Let's Encrypt does not support Ed25519 certificates** — Ed25519 works for *account keys* only (JWS signing). Domain keys for CSR signing must use RSA or ECDSA P-256/P-384. P-521 support deferred (upstream crate pre-release).
+  - **⚠️ Let's Encrypt does not support Ed25519 or IP certificates**
+  - Ed25519 works for *account keys* only (JWS signing). Domain keys for CSR must be RSA or ECDSA.
+  - **IP certificates** (RFC 8738) are supported but require a CA that implements the extension (ZeroSSL, Google Trust).
+- **Challenge types**: http-01, dns-01, tls-alpn-01, dns-persist-01
+- **24 DNS providers**: Cloudflare, Alibaba, Tencent, AWS Route53, Azure, GoDaddy, and more — see [DNS.md](DNS.md)
+- **Standalone mode**: Built-in HTTP server (`--standalone`) and TLS-ALPN server (`--challenge-type tls-alpn-01`)
+- **EAB support**: External Account Binding for CAs that require it (ZeroSSL, Google Trust)
+- **Hooks**: acme.sh-compatible pre/post/renew/deploy/notify hooks
+- **Subcommands**: `version`, `ari` (RFC 9773 renewal info)
 - **Statically linked**: `x86_64-unknown-linux-musl` builds have zero `.so` dependencies — runs on any Linux kernel
 - **Drop-in compatible**: CLI arguments match `acme-tiny` exactly
 
@@ -161,7 +169,7 @@ service nginx reload
 ## CLI Reference
 
 ```
---account-key <PATH>       Path to account private key (RSA or ECDSA P-256/P-384)
+--account-key <PATH>       Path to account private key (RSA, ECDSA P-256/P-384, Ed25519)
 --csr <PATH>               Path to CSR file
 --acme-dir <PATH>          Path to .well-known/acme-challenge/ directory (http-01)
 --quiet                    Suppress output except for errors
@@ -170,20 +178,26 @@ service nginx reload
 --ca <URL>                 DEPRECATED, use --directory-url instead
 --contact <CONTACT>...     Contact details (e.g. mailto:admin@example.com)
 --check-port <PORT>        Port for http-01 self-check [default: 80]
---challenge-type <TYPE>    http-01 (default), dns-01, or dns-persist-01
+--challenge-type <TYPE>    http-01 (default), dns-01, tls-alpn-01, or dns-persist-01
 --dns-provider <NAME>      DNS provider for DNS challenges [default: manual]
+--standalone               Use built-in HTTP server on port 80 (no disk writes)
 --agree-tos                Agree to CA Terms of Service [default: true]
---eab-kid <KID>            EAB Key Identifier for CAs requiring EAB
+--eab-kid <KID>            EAB Key Identifier (for CAs requiring EAB)
 --eab-hmac-key <KEY>       EAB HMAC Key (base64url-encoded)
---pre-hook <CMD>           Command/script to run before certificate issuance
---post-hook <CMD>          Command/script to run after issuance (success or failure)
---renew-hook <CMD>         Command/script to run after successful renewal
---deploy-hook <CMD>        Command/script to run to deploy the certificate
---notify-hook <CMD>        Command/script to run for notifications
+--output, -o <PATH>        Write certificate to file instead of stdout
+--pre-hook <CMD>           Command/script before certificate issuance
+--post-hook <CMD>          Command/script after issuance (success or failure)
+--renew-hook <CMD>         Command/script after successful renewal
+--deploy-hook <CMD>        Command/script to deploy the certificate
+--notify-hook <CMD>        Command/script for notifications
 --ca-bundle <PATH>         Additional CA certificate bundle for TLS verification
+
+Subcommands:
+  version                   Print version, git hash, build time
+  ari --cert <PATH>         Check ARI renewal info (RFC 9773), outputs JSON
 ```
 
-See [DNS.md](DNS.md) for all 24 supported DNS providers.
+See also: [DNS.md](DNS.md) (24 DNS providers), [EAB.md](EAB.md) (External Account Binding).
 
 ## License
 

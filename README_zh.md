@@ -19,9 +19,14 @@ Rust 重写 [acme-tiny](https://github.com/diafygi/acme-tiny)，兼容全部 CLI
 ## 优势
 
 - **单文件部署**：`scp` 一个二进制到服务器即可，不需要 Python/OpenSSL
-- **密钥类型**：支持 RSA + ECDSA P-256/P-384 账户密钥（自动检测 PEM 格式）
+- **密钥类型**：RSA + ECDSA P-256/P-384 + Ed25519 账户密钥（PEM 自动识别）
+  - **⚠️ Let's Encrypt 不支持 Ed25519 和 IP 证书** — Ed25519 仅可用于账户密钥。域名密钥须使用 RSA 或 ECDSA。IP 证书需支持 RFC 8738 的 CA
+- **验证方式**：http-01、dns-01、tls-alpn-01、dns-persist-01
+- **24 个 DNS 服务商**：Cloudflare、阿里云、腾讯云、AWS Route53、Azure、GoDaddy 等
+- **Standalone 模式**：内置 HTTP 服务器（`--standalone`）和 TLS-ALPN 服务器（`--challenge-type tls-alpn-01`）
+- **Hooks**：兼容 acme.sh 的 pre/post/renew/deploy/notify 钩子
+- **子命令**：`version`、`ari`（RFC 9773）
 - **静态链接**：`x86_64-unknown-linux-musl` 构建不依赖任何 `.so`，可在任意 Linux 内核上运行
-- **Drop-in 兼容**：CLI 参数与 `acme-tiny` 完全一致
 
 ## 安装
 
@@ -160,7 +165,7 @@ service nginx reload
 ## CLI 参数
 
 ```
---account-key <PATH>       账户私钥路径（RSA 或 ECDSA P-256/P-384）
+--account-key <PATH>       账户私钥路径（RSA、ECDSA P-256/P-384、Ed25519）
 --csr <PATH>               CSR 文件路径
 --acme-dir <PATH>          .well-known/acme-challenge/ 目录路径（http-01）
 --quiet                    仅输出错误
@@ -169,17 +174,23 @@ service nginx reload
 --ca <URL>                 已废弃，请使用 --directory-url
 --contact <CONTACT>...     账户联系方式（如 mailto:admin@example.com）
 --check-port <PORT>        自检时使用的端口 [默认: 80]
---challenge-type <TYPE>    http-01（默认）、dns-01、dns-persist-01
+--challenge-type <TYPE>    http-01（默认）、dns-01、tls-alpn-01、dns-persist-01
 --dns-provider <NAME>      DNS 提供商名称 [默认: manual]
+--standalone               使用内置 HTTP 服务器（端口 80），不写磁盘文件
 --agree-tos                同意 CA 服务条款 [默认: true]
 --eab-kid <KID>            EAB Key Identifier（需要 EAB 的 CA）
 --eab-hmac-key <KEY>       EAB HMAC Key（base64url 编码）
+--output, -o <PATH>        将证书输出到文件（默认 stdout）
 --pre-hook <CMD>           证书签发前执行的命令/脚本
 --post-hook <CMD>          签发后执行（无论成败）
 --renew-hook <CMD>         续期成功后执行
 --deploy-hook <CMD>        证书签发后部署命令/脚本
 --notify-hook <CMD>        通知命令/脚本
 --ca-bundle <PATH>         额外 CA 证书包路径
+
+子命令：
+  version                   输出版本号、git hash、编译时间
+  ari --cert <PATH>         查询 ARI 续期信息（RFC 9773），输出 JSON
 ```
 
 详情见 [DNS.md](DNS.md) 了解全部 24 个 DNS 提供商。
