@@ -19,7 +19,8 @@ A Rust port of [acme-tiny](https://github.com/diafygi/acme-tiny), fully compatib
 ## Advantages
 
 - **Single-file deployment**: `scp` one binary to your server — no Python or OpenSSL needed
-- **Key types**: Supports RSA + ECDSA P-256/P-384 account keys (auto-detected from PEM)
+- **Key types**: RSA + ECDSA P-256/P-384 + Ed25519 account keys (auto-detected from PEM)
+  - **⚠️ Let's Encrypt does not support Ed25519 certificates** — Ed25519 works for *account keys* only (JWS signing). Domain keys for CSR signing must use RSA or ECDSA P-256/P-384. P-521 support deferred (upstream crate pre-release).
 - **Statically linked**: `x86_64-unknown-linux-musl` builds have zero `.so` dependencies — runs on any Linux kernel
 - **Drop-in compatible**: CLI arguments match `acme-tiny` exactly
 

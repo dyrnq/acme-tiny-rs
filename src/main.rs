@@ -195,6 +195,10 @@ enum SigningKey {
         key: P384SigningKey,
         jwk: serde_json::Value,
     },
+    Ed25519 {
+        key: ed25519_dalek::SigningKey,
+        jwk: serde_json::Value,
+    },
 }
 
 impl SigningKey {
@@ -202,7 +206,8 @@ impl SigningKey {
         match self {
             SigningKey::Rsa { jwk, .. }
             | SigningKey::EcdsaP256 { jwk, .. }
-            | SigningKey::EcdsaP384 { jwk, .. } => jwk,
+            | SigningKey::EcdsaP384 { jwk, .. }
+            | SigningKey::Ed25519 { jwk, .. } => jwk,
         }
     }
 
@@ -211,6 +216,7 @@ impl SigningKey {
             SigningKey::Rsa { .. } => "RS256",
             SigningKey::EcdsaP256 { .. } => "ES256",
             SigningKey::EcdsaP384 { .. } => "ES384",
+            SigningKey::Ed25519 { .. } => "EdDSA",
         }
     }
 
@@ -227,6 +233,10 @@ impl SigningKey {
             SigningKey::EcdsaP384 { key, .. } => {
                 let sig: p384::ecdsa::Signature = key.sign(data);
                 Ok(sig.to_vec())
+            }
+            SigningKey::Ed25519 { key, .. } => {
+                use ed25519_dalek::Signer;
+                Ok(key.sign(data).to_vec())
             }
         }
     }
@@ -442,6 +452,7 @@ fn parse_account_key(path: &str) -> Result<SigningKey> {
         // PKCS#8 format — try RSA first, then EC
         parse_rsa_key(&pem_data)
             .or_else(|_| parse_ec_key(&pem_data))
+            .or_else(|_| parse_ed25519_key(&pem_data))
     } else {
         bail!("Unsupported key format in {path}");
     }
@@ -518,6 +529,22 @@ fn build_ec_p384_key(secret: P384SecretKey) -> Result<SigningKey> {
         "y": b64(point.y().ok_or_else(|| anyhow!("Missing EC y coordinate"))?),
     });
     Ok(SigningKey::EcdsaP384 { key: signing_key, jwk })
+}
+
+fn parse_ed25519_key(pem_data: &str) -> Result<SigningKey> {
+    let blocks = extract_pem_blocks(pem_data);
+    for block in &blocks {
+        if let Ok(signing_key) = ed25519_dalek::SigningKey::from_pkcs8_pem(block) {
+            let verifying_key = signing_key.verifying_key();
+            let jwk = serde_json::json!({
+                "crv": "Ed25519",
+                "kty": "OKP",
+                "x": b64(verifying_key.as_bytes()),
+            });
+            return Ok(SigningKey::Ed25519 { key: signing_key, jwk });
+        }
+    }
+    bail!("Failed to parse Ed25519 private key (PKCS#8)")
 }
 
 /// Extract individual PEM blocks from data that may contain multiple blocks
@@ -1385,6 +1412,24 @@ mod tests {
             .unwrap();
         let sk = parse_account_key(key_path.to_str().unwrap()).unwrap();
         let sig = sk.sign(b"test signing data").unwrap();
+        assert!(!sig.is_empty());
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_parse_account_key_ed25519() {
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("ed25519.key");
+        std::process::Command::new("openssl")
+            .args(["genpkey", "-algorithm", "Ed25519", "-out"])
+            .arg(&key_path)
+            .output()
+            .unwrap();
+        let result = parse_account_key(key_path.to_str().unwrap());
+        assert!(result.is_ok(), "{:?}", result.err());
+        let sk = result.unwrap();
+        assert_eq!(sk.alg(), "EdDSA");
+        let sig = sk.sign(b"test").unwrap();
         assert!(!sig.is_empty());
     }
 }
