@@ -57,6 +57,9 @@ start_pebble || exit 1
 start_challenge_server 5002 "${TMPDIR}/challenges" || exit 1
 
 CHECK_PORT=5002
+# Prevent proxy from sending localhost traffic to external proxy
+export no_proxy="localhost,127.0.0.1,.local"
+export NO_PROXY="localhost,127.0.0.1,.local"
 BASE_ARGS="--directory-url ${DIRECTORY_URL} --check-port ${CHECK_PORT} --insecure --agree-tos"
 
 # Helper for cert verification (usable in bash -c)

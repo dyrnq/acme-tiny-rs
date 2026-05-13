@@ -94,7 +94,7 @@ start_pebble() {
     local max_wait=20
     local waited=0
     while [ $waited -lt $max_wait ]; do
-        if curl -sk --connect-timeout 2 "${DIRECTORY_URL}" > /dev/null 2>&1; then
+        if curl -sk --noproxy '*' --connect-timeout 2 "${DIRECTORY_URL}" > /dev/null 2>&1; then
             echo "Pebble ready (PID: ${PEBBLE_PID})"
             return 0
         fi
@@ -125,7 +125,7 @@ start_challenge_server() {
     local max_wait=10
     local waited=0
     while [ $waited -lt $max_wait ]; do
-        if curl -s --connect-timeout 2 "http://localhost:${port}/.well-known/acme-challenge/test.txt" 2>/dev/null | grep -q ok; then
+        if curl -s --noproxy '*' --connect-timeout 2 "http://localhost:${port}/.well-known/acme-challenge/test.txt" 2>/dev/null | grep -q ok; then
             echo "Challenge server ready (PID: ${CHALLENGE_PID})"
             rm -f "${test_file}"
             return 0
