@@ -100,6 +100,10 @@ struct Cli {
     #[arg(long = "agree-tos", default_value_t = true)]
     agree_tos: bool,
 
+    /// Write certificate to file instead of stdout
+    #[arg(short = 'o', long = "output")]
+    output: Option<String>,
+
     // ---- Hooks (acme.sh compatible) ----
     /// Command or script to run before obtaining any certificates
     #[arg(long = "pre-hook")]
@@ -1182,8 +1186,13 @@ async fn main() -> Result<()> {
     }
     let certificate = result?;
 
-    // Output certificate to stdout
-    print!("{certificate}");
+    if let Some(ref path) = cli.output {
+        std::fs::write(path, &certificate)
+            .with_context(|| format!("Failed to write certificate to {path}"))?;
+        info!("Certificate written to {path}");
+    } else {
+        print!("{certificate}");
+    }
 
     Ok(())
 }
