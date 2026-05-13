@@ -162,14 +162,27 @@ service nginx reload
 ```
 --account-key <PATH>       账户私钥路径（RSA 或 ECDSA P-256/P-384）
 --csr <PATH>               CSR 文件路径
---acme-dir <PATH>          .well-known/acme-challenge/ 目录路径
+--acme-dir <PATH>          .well-known/acme-challenge/ 目录路径（http-01）
 --quiet                    仅输出错误
---disable-check            跳过 challenge 文件自检
+--disable-check            跳过 challenge 文件自检（http-01）
 --directory-url <URL>      CA directory URL [默认: Let's Encrypt 生产环境]
 --ca <URL>                 已废弃，请使用 --directory-url
 --contact <CONTACT>...     账户联系方式（如 mailto:admin@example.com）
 --check-port <PORT>        自检时使用的端口 [默认: 80]
+--challenge-type <TYPE>    http-01（默认）、dns-01、dns-persist-01
+--dns-provider <NAME>      DNS 提供商名称 [默认: manual]
+--agree-tos                同意 CA 服务条款 [默认: true]
+--eab-kid <KID>            EAB Key Identifier（需要 EAB 的 CA）
+--eab-hmac-key <KEY>       EAB HMAC Key（base64url 编码）
+--pre-hook <CMD>           证书签发前执行的命令/脚本
+--post-hook <CMD>          签发后执行（无论成败）
+--renew-hook <CMD>         续期成功后执行
+--deploy-hook <CMD>        证书签发后部署命令/脚本
+--notify-hook <CMD>        通知命令/脚本
+--ca-bundle <PATH>         额外 CA 证书包路径
 ```
+
+详情见 [DNS.md](DNS.md) 了解全部 24 个 DNS 提供商。
 
 ## License
 

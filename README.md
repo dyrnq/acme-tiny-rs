@@ -162,14 +162,27 @@ service nginx reload
 ```
 --account-key <PATH>       Path to account private key (RSA or ECDSA P-256/P-384)
 --csr <PATH>               Path to CSR file
---acme-dir <PATH>          Path to .well-known/acme-challenge/ directory
+--acme-dir <PATH>          Path to .well-known/acme-challenge/ directory (http-01)
 --quiet                    Suppress output except for errors
---disable-check            Skip self-check of challenge file
+--disable-check            Skip self-check of challenge file (http-01)
 --directory-url <URL>      CA directory URL [default: Let's Encrypt production]
 --ca <URL>                 DEPRECATED, use --directory-url instead
 --contact <CONTACT>...     Contact details (e.g. mailto:admin@example.com)
---check-port <PORT>        Port for self-check [default: 80]
+--check-port <PORT>        Port for http-01 self-check [default: 80]
+--challenge-type <TYPE>    http-01 (default), dns-01, or dns-persist-01
+--dns-provider <NAME>      DNS provider for DNS challenges [default: manual]
+--agree-tos                Agree to CA Terms of Service [default: true]
+--eab-kid <KID>            EAB Key Identifier for CAs requiring EAB
+--eab-hmac-key <KEY>       EAB HMAC Key (base64url-encoded)
+--pre-hook <CMD>           Command/script to run before certificate issuance
+--post-hook <CMD>          Command/script to run after issuance (success or failure)
+--renew-hook <CMD>         Command/script to run after successful renewal
+--deploy-hook <CMD>        Command/script to run to deploy the certificate
+--notify-hook <CMD>        Command/script to run for notifications
+--ca-bundle <PATH>         Additional CA certificate bundle for TLS verification
 ```
+
+See [DNS.md](DNS.md) for all 24 supported DNS providers.
 
 ## License
 
