@@ -646,11 +646,28 @@ fn parse_csr(path: &str) -> Result<Vec<String>> {
         for ext in extensions {
             if let ParsedExtension::SubjectAlternativeName(san) = ext {
                 for name in &san.general_names {
-                    if let GeneralName::DNSName(d) = name {
-                        let d = d.to_string();
-                        if !domains.contains(&d) {
-                            domains.push(d);
+                    match name {
+                        GeneralName::DNSName(d) => {
+                            let d = d.to_string();
+                            if !domains.contains(&d) {
+                                domains.push(d);
+                            }
                         }
+                        GeneralName::IPAddress(ip) => {
+                            let ip_str = match ip.len() {
+                                4 => std::net::IpAddr::V4(std::net::Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3])).to_string(),
+                                16 => {
+                                    let mut bytes = [0u8; 16];
+                                    bytes.copy_from_slice(ip);
+                                    std::net::IpAddr::V6(std::net::Ipv6Addr::from(bytes)).to_string()
+                                }
+                                _ => continue,
+                            };
+                            if !domains.contains(&ip_str) {
+                                domains.push(ip_str);
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -863,7 +880,10 @@ async fn get_crt(
     info!("Creating new order...");
     let identifiers: Vec<serde_json::Value> = domains
         .iter()
-        .map(|d| serde_json::json!({"type": "dns", "value": d}))
+        .map(|d| {
+            let id_type = if d.parse::<std::net::IpAddr>().is_ok() { "ip" } else { "dns" };
+            serde_json::json!({"type": id_type, "value": d})
+        })
         .collect();
     let order_payload = serde_json::json!({"identifiers": identifiers});
 
@@ -1229,6 +1249,17 @@ async fn main() -> Result<()> {
              Wildcard domains found: {}\n\
              Add: --challenge-type dns-01 [--dns-provider <provider>]",
             domains.iter().filter(|d| d.starts_with("*.")).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        );
+    }
+
+    // IP addresses cannot use DNS challenge (RFC 8738)
+    let has_ip = domains.iter().any(|d| d.parse::<std::net::IpAddr>().is_ok());
+    if has_ip && is_dns_challenge {
+        bail!(
+            "IP addresses require http-01 or tls-alpn-01 challenge.\n\
+             IP addresses found: {}\n\
+             Use: --challenge-type http-01",
+            domains.iter().filter(|d| d.parse::<std::net::IpAddr>().is_ok()).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
         );
     }
 
