@@ -66,6 +66,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio-rustls = "0.26"
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
 
+# TLS certificate check (check-tls subcommand)
+webpki-roots = "1"
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -187,6 +187,33 @@ enum Commands {
     },
     /// List all known ACME CA presets
     ListCa,
+    /// Inspect TLS certificate details (table or JSON)
+    Inspect {
+        /// Domain(s) to check (host[:port] format, port defaults to 443)
+        #[arg(short = 'd', long = "domain", required = true, num_args = 1..)]
+        domains: Vec<String>,
+        /// Default port when not specified in domain
+        #[arg(long = "port", default_value_t = 443)]
+        port: u16,
+        /// Output as JSON instead of table
+        #[arg(long = "json")]
+        json: bool,
+    },
+    /// Dump TLS certificate chain (like openssl s_client -showcerts)
+    Dump {
+        /// Domain to connect to (host[:port])
+        #[arg()]
+        domain: String,
+        /// Default port when not specified in domain
+        #[arg(long = "port", default_value_t = 443)]
+        port: u16,
+        /// Write output to file instead of stdout
+        #[arg(short = 'o', long = "output")]
+        output: Option<String>,
+        /// Output format
+        #[arg(long = "format", default_value = "pem")]
+        format: commands::dump::DumpFormat,
+    },
     /// Revoke a certificate (RFC 8555 §7.6)
     Revoke {
         /// Path to the certificate (PEM) to revoke
@@ -1292,6 +1319,12 @@ async fn main() -> Result<()> {
             Commands::ListCa => {
                 ca::print_ca_table();
                 return Ok(());
+            }
+            Commands::Inspect { domains, port, json } => {
+                return commands::inspect::run(&domains, port, json).await;
+            }
+            Commands::Dump { domain, port, output, format } => {
+                return commands::dump::run(&domain, port, output.as_deref(), format).await;
             }
             Commands::Revoke { cert, account_key, directory_url, server, reason } => {
                 let dir_url = directory_url
