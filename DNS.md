@@ -53,6 +53,9 @@ acme-tiny-rs --account-key account.key --csr domain.csr \
 | JD Cloud       | `jdcloud` / `jd`                 | `JD_ACCESS_KEY_ID`, `JD_ACCESS_KEY_SECRET`, `JD_REGION` (optional)                                        | Cloud           |
 | AWS Route53    | `aws` / `route53`                | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`                                                              | Cloud           |
 | Azure          | `azure`                          | `AZUREDNS_SUBSCRIPTIONID`, `AZUREDNS_TENANTID`, `AZUREDNS_APPID`, `AZUREDNS_CLIENTSECRET`                 | Cloud           |
+| Google Cloud   | `gcloud` / `google`              | `GCE_PROJECT` (requires `gcloud` CLI installed and authenticated)                                       | Cloud           |
+| DigitalOcean   | `digitalocean` / `do` / `dgon`   | `DO_API_KEY`                                                                                            | Cloud           |
+| OVH            | `ovh`                            | `OVH_ENDPOINT` (optional), `OVH_APPLICATION_KEY` / `OVH_AK`, `OVH_APPLICATION_SECRET` / `OVH_AS`, `OVH_CONSUMER_KEY` / `OVH_CK` | Cloud           |
 | Linode v4      | `linode` / `linode_v4`           | `LINODE_V4_API_KEY`                                                                                       | VPS / Hosting   |
 | Linode v3      | `linode_v3`                      | `LINODE_API_KEY` (deprecated)                                                                             | VPS / Hosting   |
 | Vultr          | `vultr`                          | `VULTR_API_KEY`                                                                                           | VPS / Hosting   |
@@ -64,6 +67,7 @@ acme-tiny-rs --account-key account.key --csr domain.csr \
 | Manual         | `manual` (default)               | None — prints instructions, waits for Enter                                                               | Special         |
 | acme-dns       | `acmedns`                        | `ACMEDNS_BASE_URL` (auto-registers if no credentials)                                                     | Special         |
 | AcmeProxy      | `acmeproxy`                      | `ACMEPROXY_ENDPOINT`, `ACMEPROXY_USERNAME`, `ACMEPROXY_PASSWORD`                                          | Special         |
+| DNSimple       | `dnsimple`                       | `DNSIMPLE_OAUTH_TOKEN` (account ID auto-discovered)                                                         | Domain Registrar|
 
 ## Manual Mode
 

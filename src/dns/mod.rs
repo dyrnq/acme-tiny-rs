@@ -22,6 +22,10 @@ pub mod ionos;
 pub mod tencent;
 pub mod jdcloud;
 pub mod netlify;
+pub mod gcloud;
+pub mod digitalocean;
+pub mod ovh;
+pub mod dnsimple;
 
 use anyhow::{bail, Result};
 
@@ -66,6 +70,10 @@ pub fn create_provider(name: &str) -> Result<Box<dyn DnsProvider>> {
         "tencent" | "tencentcloud" => Ok(Box::new(tencent::TencentDns::new()?)),
         "jdcloud" | "jd" => Ok(Box::new(jdcloud::JdCloudDns::new()?)),
         "netlify" => Ok(Box::new(netlify::NetlifyDns::new()?)),
+        "gcloud" | "google" => Ok(Box::new(gcloud::GoogleCloudDns::new()?)),
+        "digitalocean" | "do" | "dgon" => Ok(Box::new(digitalocean::DigitalOceanDns::new()?)),
+        "ovh" => Ok(Box::new(ovh::OvhDns::new()?)),
+        "dnsimple" => Ok(Box::new(dnsimple::DnsimpleDns::new()?)),
         _ => bail!("Unknown DNS provider: {name}"),
     }
 }

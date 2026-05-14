@@ -101,7 +101,12 @@ struct Cli {
     #[arg(long = "standalone")]
     standalone: bool,
 
-    /// DNS provider for dns-01 challenge: manual, cloudflare (cf)
+    /// DNS provider for dns-01 challenge: manual, cloudflare (cf), alibaba (ali),
+    /// aws (route53), azure, acmedns, acmeproxy, dnspod (dp), godaddy (gd),
+    /// huaweicloud (huawei), duckdns, linode (linode_v4), vultr, namecheap,
+    /// desec, gandi, namesilo, porkbun, bunny (bunnycdn), ionos,
+    /// tencent (tencentcloud), jdcloud (jd), netlify,
+    /// gcloud (google), digitalocean (do, dgon), ovh, dnsimple
     #[arg(long = "dns-provider", default_value = "manual")]
     dns_provider: String,
 

@@ -10,6 +10,7 @@ dependencies = [
  "base64",
  "clap",
  "der",
+ "digest",
  "ed25519-dalek",
  "env_logger",
  "hmac",

@@ -24,7 +24,7 @@ A Rust port of [acme-tiny](https://github.com/diafygi/acme-tiny), fully compatib
   - Ed25519 works for *account keys* only (JWS signing). Domain keys for CSR must be RSA or ECDSA.
   - **IP certificates** (RFC 8738) are supported but require a CA that implements the extension (ZeroSSL, Google Trust).
 - **Challenge types**: http-01, dns-01, tls-alpn-01, dns-persist-01
-- **24 DNS providers**: Cloudflare, Alibaba, Tencent, AWS Route53, Azure, GoDaddy, and more — see [DNS.md](DNS.md)
+- **DNS providers**: Cloudflare, Alibaba, Tencent, AWS Route53, Azure, GoDaddy, Google Cloud, DigitalOcean, OVH, and more — see [DNS.md](DNS.md)
 - **Standalone mode**: Built-in HTTP server (`--standalone`) and TLS-ALPN server (`--challenge-type tls-alpn-01`)
 - **EAB support**: External Account Binding for CAs that require it (ZeroSSL, Google Trust)
 - **Hooks**: acme.sh-compatible pre/post/renew/deploy/notify hooks
@@ -126,12 +126,27 @@ acme-tiny-rs \
 Staging environment (test):
 
 ```sh
+# Using preset name
 acme-tiny-rs \
+    --server letsencrypt-staging \
     --account-key ./account.key \
     --csr ./domain.csr \
     --acme-dir /var/www/challenges/ \
-    --directory-url https://acme-staging-v02.api.letsencrypt.org/directory \
     > signed_chain.crt
+
+# Or using full URL
+acme-tiny-rs \
+    --directory-url https://acme-staging-v02.api.letsencrypt.org/directory \
+    --account-key ./account.key \
+    --csr ./domain.csr \
+    --acme-dir /var/www/challenges/ \
+    > signed_chain.crt
+```
+
+View all available CA presets:
+
+```sh
+acme-tiny-rs --list-ca
 ```
 
 ### 5. Install the certificate
@@ -174,8 +189,11 @@ service nginx reload
 --acme-dir <PATH>          Path to .well-known/acme-challenge/ directory (http-01)
 --quiet                    Suppress output except for errors
 --disable-check            Skip self-check of challenge file (http-01)
---directory-url <URL>      CA directory URL [default: Let's Encrypt production]
---ca <URL>                 DEPRECATED, use --directory-url instead
+--directory-url <URL>      CA directory URL (overrides --server)
+--server <NAME|URL>        CA server preset name or URL [default: letsencrypt]
+                           Presets: letsencrypt, letsencrypt-staging, zerossl,
+                           buypass, sslcom, google, step, pebble, pebble-eab
+--ca <URL>                 DEPRECATED, use --server or --directory-url instead
 --contact <CONTACT>...     Contact details (e.g. mailto:admin@example.com)
 --check-port <PORT>        Port for http-01 self-check [default: 80]
 --challenge-type <TYPE>    http-01 (default), dns-01, tls-alpn-01, or dns-persist-01
@@ -197,7 +215,7 @@ Subcommands:
   ari --cert <PATH>         Check ARI renewal info (RFC 9773), outputs JSON
 ```
 
-See also: [DNS.md](DNS.md) (24 DNS providers), [EAB.md](EAB.md) (External Account Binding).
+See also: [DNS.md](DNS.md), [EAB.md](EAB.md) (External Account Binding).
 
 ## License
 

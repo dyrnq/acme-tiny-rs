@@ -22,7 +22,7 @@ Rust 重写 [acme-tiny](https://github.com/diafygi/acme-tiny)，兼容全部 CLI
 - **密钥类型**：RSA + ECDSA P-256/P-384 + Ed25519 账户密钥（PEM 自动识别）
   - **⚠️ Let's Encrypt 不支持 Ed25519 和 IP 证书** — Ed25519 仅可用于账户密钥。域名密钥须使用 RSA 或 ECDSA。IP 证书需支持 RFC 8738 的 CA
 - **验证方式**：http-01、dns-01、tls-alpn-01、dns-persist-01
-- **24 个 DNS 服务商**：Cloudflare、阿里云、腾讯云、AWS Route53、Azure、GoDaddy 等
+- **DNS 服务商**：Cloudflare、阿里云、腾讯云、AWS Route53、Azure、GoDaddy、Google Cloud、DigitalOcean、OVH 等
 - **Standalone 模式**：内置 HTTP 服务器（`--standalone`）和 TLS-ALPN 服务器（`--challenge-type tls-alpn-01`）
 - **Hooks**：兼容 acme.sh 的 pre/post/renew/deploy/notify 钩子
 - **子命令**：`version`、`ari`（RFC 9773）
@@ -122,12 +122,27 @@ acme-tiny-rs \
 测试环境 (staging):
 
 ```sh
+# 使用预设名称
 acme-tiny-rs \
+    --server letsencrypt-staging \
     --account-key ./account.key \
     --csr ./domain.csr \
     --acme-dir /var/www/challenges/ \
-    --directory-url https://acme-staging-v02.api.letsencrypt.org/directory \
     > signed_chain.crt
+
+# 或直接使用完整 URL
+acme-tiny-rs \
+    --directory-url https://acme-staging-v02.api.letsencrypt.org/directory \
+    --account-key ./account.key \
+    --csr ./domain.csr \
+    --acme-dir /var/www/challenges/ \
+    > signed_chain.crt
+```
+
+查看所有可用的 CA 预设:
+
+```sh
+acme-tiny-rs --list-ca
 ```
 
 ### 5. 安装证书
@@ -170,8 +185,11 @@ service nginx reload
 --acme-dir <PATH>          .well-known/acme-challenge/ 目录路径（http-01）
 --quiet                    仅输出错误
 --disable-check            跳过 challenge 文件自检（http-01）
---directory-url <URL>      CA directory URL [默认: Let's Encrypt 生产环境]
---ca <URL>                 已废弃，请使用 --directory-url
+--directory-url <URL>      CA directory URL (overrides --server)
+--server <NAME|URL>        CA server preset name or URL [default: letsencrypt]
+                           Presets: letsencrypt, letsencrypt-staging, zerossl,
+                           buypass, sslcom, google, step, pebble, pebble-eab
+--ca <URL>                 DEPRECATED, use --server or --directory-url instead
 --contact <CONTACT>...     账户联系方式（如 mailto:admin@example.com）
 --check-port <PORT>        自检时使用的端口 [默认: 80]
 --challenge-type <TYPE>    http-01（默认）、dns-01、tls-alpn-01、dns-persist-01
@@ -193,7 +211,7 @@ service nginx reload
   ari --cert <PATH>         查询 ARI 续期信息（RFC 9773），输出 JSON
 ```
 
-详情见 [DNS.md](DNS.md) 了解全部 24 个 DNS 提供商。
+详情见 [DNS.md](DNS.md) 了解全部 DNS 提供商。
 
 ## License
 
