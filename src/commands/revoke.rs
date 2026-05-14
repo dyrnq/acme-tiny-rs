@@ -5,7 +5,24 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::json;
 
-use crate::{send_signed_request, Directory, parse_account_key};
+use crate::{send_signed_request, Directory, parse_account_key, USER_AGENT};
+
+/// Build HTTP client for revoke with optional custom CA bundle / insecure mode.
+fn build_http_client(ca_bundle: Option<&str>, insecure: bool) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder();
+
+    if insecure {
+        builder = builder.danger_accept_invalid_certs(true);
+    } else if let Some(ref path) = ca_bundle {
+        let cert_pem = std::fs::read(path)
+            .with_context(|| format!("Error reading CA bundle: {path}"))?;
+        let cert = reqwest::tls::Certificate::from_pem(&cert_pem)
+            .context("Failed to parse CA certificate")?;
+        builder = builder.add_root_certificate(cert);
+    }
+
+    builder.build().context("Failed to create HTTP client")
+}
 
 /// Revoke a certificate signed by the ACME account key.
 pub async fn run(
@@ -13,6 +30,8 @@ pub async fn run(
     account_key_path: &str,
     directory_url: &str,
     reason: Option<u32>,
+    ca_bundle: Option<&str>,
+    insecure: bool,
 ) -> Result<()> {
     // 1. Read and parse the certificate → DER, then base64url-encode
     let cert_pem = std::fs::read(cert_path)
@@ -24,11 +43,13 @@ pub async fn run(
     // 2. Parse account key for JWS signing
     let signing_key = parse_account_key(account_key_path)?;
 
-    // 3. Fetch ACME directory
-    let client = reqwest::Client::new();
+    // 3. Build HTTP client with TLS settings
+    let client = build_http_client(ca_bundle, insecure)?;
+
+    // 4. Fetch ACME directory
     let directory: serde_json::Value = client
         .get(directory_url)
-        .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
+        .header("User-Agent", USER_AGENT)
         .send().await.context("Failed to fetch ACME directory")?
         .json().await.context("Invalid directory response")?;
 
@@ -45,7 +66,7 @@ pub async fn run(
             .ok_or_else(|| anyhow!("Missing newOrder in directory"))?.to_string(),
     };
 
-    // 4. Build revocation payload
+    // 5. Build revocation payload
     let mut payload = json!({ "certificate": cert_b64 });
     if let Some(r) = reason {
         if r > 10 {
@@ -54,7 +75,7 @@ pub async fn run(
         payload["reason"] = json!(r);
     }
 
-    // 5. Send signed revocation request (JWK-based signing, no account URL)
+    // 6. Send signed revocation request (JWK-based signing, no account URL)
     let (_resp, status, _headers) = send_signed_request(
         &client,
         revoke_url,

@@ -231,6 +231,12 @@ enum Commands {
         /// Revocation reason code (0-10 per RFC 5280)
         #[arg(long = "reason")]
         reason: Option<u32>,
+        /// Path to CA bundle for TLS verification
+        #[arg(long = "ca-bundle")]
+        ca_bundle: Option<String>,
+        /// Disable TLS certificate verification (testing only)
+        #[arg(long = "insecure", hide = true)]
+        insecure: bool,
     },
     /// Print version information
     Version,
@@ -1039,6 +1045,27 @@ async fn get_crt(
 
         let keyauthorization = format!("{cleaned_token}.{thumbprint}");
 
+        // Pre-compute DNS challenge info if needed (available for cleanup after poll)
+        let dns_cleanup_info: Option<(String, String)> = if challenge_type == "dns-01" || challenge_type == "dns-persist-01" {
+            let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
+            let effective_domain = dns::cname::resolve_challenge_domain(&domain).await;
+            if effective_domain != domain {
+                log::info!(
+                    "DNS challenge delegated from {} -> {} (CNAME auto-follow)",
+                    domain, effective_domain
+                );
+            }
+            dns::create_provider(&cli.dns_provider)?.present(&effective_domain, &txt_value)?;
+            if challenge_type == "dns-01" {
+                Some((effective_domain, txt_value))
+            } else {
+                // dns-persist-01: intentionally skip cleanup
+                None
+            }
+        } else {
+            None
+        };
+
         // Standalone server handle — must live until after validation
         let mut _standalone_server: Option<tokio::task::JoinHandle<()>> = None;
 
@@ -1092,8 +1119,7 @@ async fn get_crt(
             }
         }
         } else if challenge_type == "dns-01" || challenge_type == "dns-persist-01" {
-            let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
-            dns::create_provider(&cli.dns_provider)?.present(&domain, &txt_value)?;
+            // DNS challenge already handled above
         } else {
             bail!("Unsupported challenge type: {challenge_type}");
         }
@@ -1129,10 +1155,9 @@ async fn get_crt(
             let _ = fs::remove_file(&wellknown_path);
         }
         // http-standalone / tls-alpn-01: cleanup is automatic — server handle drops here
-        if challenge_type == "dns-01" {
-            let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
+        if let Some((eff_domain, txt_val)) = dns_cleanup_info {
             let _ = dns::create_provider(&cli.dns_provider)
-                .and_then(|p| p.cleanup(&domain, &txt_value));
+                .and_then(|p| p.cleanup(&eff_domain, &txt_val));
         }
         // dns-persist-01: intentionally skip cleanup — record persists for future renewals
 
@@ -1326,12 +1351,12 @@ async fn main() -> Result<()> {
             Commands::Dump { domain, port, output, format } => {
                 return commands::dump::run(&domain, port, output.as_deref(), format).await;
             }
-            Commands::Revoke { cert, account_key, directory_url, server, reason } => {
+            Commands::Revoke { cert, account_key, directory_url, server, reason, ca_bundle, insecure } => {
                 let dir_url = directory_url
                     .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_else(|| {
                         ca::KNOWN_CAS.iter().find(|c| c.id == "letsencrypt").unwrap().directory_url.to_string()
                     }));
-                return commands::revoke::run(&cert, &account_key, &dir_url, reason).await;
+                return commands::revoke::run(&cert, &account_key, &dir_url, reason, ca_bundle.as_deref(), insecure).await;
             }
         }
     }

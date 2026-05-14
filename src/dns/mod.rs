@@ -1,4 +1,5 @@
 /// DNS-01 challenge provider trait and built-in implementations.
+pub mod cname;
 pub mod manual;
 pub mod cf;
 pub mod ali;

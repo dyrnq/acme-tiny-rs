@@ -69,6 +69,9 @@ rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"]
 # TLS certificate check (check-tls subcommand)
 webpki-roots = "1"
 
+# DNS resolution for CNAME auto-follow (RFC compliant challenge delegation)
+hickory-resolver = "0.25"
+
 [dev-dependencies]
 tempfile = "3"
 
