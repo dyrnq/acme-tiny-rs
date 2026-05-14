@@ -25,7 +25,8 @@ Rust 重写 [acme-tiny](https://github.com/diafygi/acme-tiny)，兼容全部 CLI
 - **DNS 服务商**：Cloudflare、阿里云、腾讯云、AWS Route53、Azure、GoDaddy、Google Cloud、DigitalOcean、OVH 等
 - **Standalone 模式**：内置 HTTP 服务器（`--standalone`）和 TLS-ALPN 服务器（`--challenge-type tls-alpn-01`）
 - **Hooks**：兼容 acme.sh 的 pre/post/renew/deploy/notify 钩子
-- **子命令**：`version`、`ari`（RFC 9773）
+- **子命令**：`revoke`、`inspect`、`dump`、`ari`、`version`
+- **DNS CNAME 委托**：自动跟随 `_acme-challenge` CNAME 链（无需手动指定 `--challenge-alias`）
 - **静态链接**：`x86_64-unknown-linux-musl` 构建不依赖任何 `.so`，可在任意 Linux 内核上运行
 
 ## 安装
@@ -209,9 +210,12 @@ service nginx reload
 子命令：
   version                   输出版本号、git hash、编译时间
   ari --cert <PATH>         查询 ARI 续期信息（RFC 9773），输出 JSON
+  revoke --cert <PATH>      吊销证书（RFC 8555 §7.6）
+  inspect -d <DOMAIN>       检查 TLS 证书信息（表格或 --json）
+  dump <DOMAIN>             导出 TLS 证书链
 ```
 
-详情见 [DNS.md](DNS.md) 了解全部 DNS 提供商。
+详情见 [DNS.md](DNS.md) 了解全部 DNS 提供商，[EAB.md](EAB.md) 了解外部账户绑定。
 
 ## License
 

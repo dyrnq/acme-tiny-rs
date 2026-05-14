@@ -28,7 +28,8 @@ A Rust port of [acme-tiny](https://github.com/diafygi/acme-tiny), fully compatib
 - **Standalone mode**: Built-in HTTP server (`--standalone`) and TLS-ALPN server (`--challenge-type tls-alpn-01`)
 - **EAB support**: External Account Binding for CAs that require it (ZeroSSL, Google Trust)
 - **Hooks**: acme.sh-compatible pre/post/renew/deploy/notify hooks
-- **Subcommands**: `version`, `ari` (RFC 9773 renewal info)
+- **Subcommands**: `revoke`, `inspect`, `dump`, `ari`, `version`
+- **DNS CNAME delegation**: Auto-follow `_acme-challenge` CNAME chain (no manual `--challenge-alias` needed)
 - **Statically linked**: `x86_64-unknown-linux-musl` builds have zero `.so` dependencies — runs on any Linux kernel
 - **Drop-in compatible**: CLI arguments match `acme-tiny` exactly
 
@@ -213,6 +214,9 @@ service nginx reload
 Subcommands:
   version                   Print version, git hash, build time
   ari --cert <PATH>         Check ARI renewal info (RFC 9773), outputs JSON
+  revoke --cert <PATH>      Revoke a certificate (RFC 8555 §7.6)
+  inspect -d <DOMAIN>       TLS certificate info (table or --json)
+  dump <DOMAIN>             Dump TLS certificate chain
 ```
 
 See also: [DNS.md](DNS.md), [EAB.md](EAB.md) (External Account Binding).
