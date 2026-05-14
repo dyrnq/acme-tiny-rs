@@ -288,11 +288,12 @@ run_test "revoke certificate via pebble" \
             --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
             ${BASE_ARGS} \
             > ${TMPDIR}/revokable.crt 2>/dev/null || exit 1
-        # Revoke it (pebble CA already trusted via exported SSL_CERT_FILE)
+        # Revoke it (pebble CA is trusted via SSL_CERT_FILE from utils.sh)
         ${BINARY} \
             revoke --cert ${TMPDIR}/revokable.crt \
             --account-key ${KEYS_DIR}/account.key \
             --directory-url ${DIRECTORY_URL} \
+            --insecure \
             > /dev/null 2>&1
     "
 
