@@ -187,6 +187,24 @@ enum Commands {
     },
     /// List all known ACME CA presets
     ListCa,
+    /// Revoke a certificate (RFC 8555 §7.6)
+    Revoke {
+        /// Path to the certificate (PEM) to revoke
+        #[arg(long = "cert")]
+        cert: String,
+        /// Path to the ACME account private key
+        #[arg(long = "account-key")]
+        account_key: String,
+        /// ACME directory URL (overrides --server)
+        #[arg(long = "directory-url")]
+        directory_url: Option<String>,
+        /// ACME server preset name or URL
+        #[arg(long = "server", default_value = DEFAULT_SERVER)]
+        server: String,
+        /// Revocation reason code (0-10 per RFC 5280)
+        #[arg(long = "reason")]
+        reason: Option<u32>,
+    },
     /// Print version information
     Version,
 }
@@ -196,13 +214,13 @@ enum Commands {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Clone)]
-struct Directory {
+pub(crate) struct Directory {
     #[serde(rename = "newNonce")]
-    new_nonce: String,
+    pub(crate) new_nonce: String,
     #[serde(rename = "newAccount")]
-    new_account: String,
+    pub(crate) new_account: String,
     #[serde(rename = "newOrder")]
-    new_order: String,
+    pub(crate) new_order: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,7 +234,7 @@ struct JwsBody {
 // Unified signing key (RSA or ECDSA)
 // ---------------------------------------------------------------------------
 
-enum SigningKey {
+pub(crate) enum SigningKey {
     Rsa {
         key: RsaPrivateKey,
         jwk: serde_json::Value,
@@ -288,7 +306,7 @@ pub(crate) fn b64(data: &[u8]) -> String {
 // HTTP helper
 // ---------------------------------------------------------------------------
 
-async fn do_request(
+pub(crate) async fn do_request(
     client: &reqwest::Client,
     url: &str,
     data: Option<Vec<u8>>,
@@ -341,7 +359,7 @@ async fn do_request(
 // Signed request helper (JWS with RS256)
 // ---------------------------------------------------------------------------
 
-async fn send_signed_request(
+pub(crate) async fn send_signed_request(
     client: &reqwest::Client,
     url: &str,
     payload: Option<&serde_json::Value>,
@@ -472,7 +490,7 @@ async fn poll_until_not(
 // Replaces: openssl rsa -in account.key -noout -text
 // ---------------------------------------------------------------------------
 
-fn parse_account_key(path: &str) -> Result<SigningKey> {
+pub(crate) fn parse_account_key(path: &str) -> Result<SigningKey> {
     info!("Parsing account key...");
     let pem_data = fs::read_to_string(path)
         .with_context(|| format!("Error reading account key file: {path}"))?;
@@ -1274,6 +1292,13 @@ async fn main() -> Result<()> {
             Commands::ListCa => {
                 ca::print_ca_table();
                 return Ok(());
+            }
+            Commands::Revoke { cert, account_key, directory_url, server, reason } => {
+                let dir_url = directory_url
+                    .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_else(|| {
+                        ca::KNOWN_CAS.iter().find(|c| c.id == "letsencrypt").unwrap().directory_url.to_string()
+                    }));
+                return commands::revoke::run(&cert, &account_key, &dir_url, reason).await;
             }
         }
     }
