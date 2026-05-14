@@ -66,7 +66,24 @@ pub async fn run(
             .ok_or_else(|| anyhow!("Missing newOrder in directory"))?.to_string(),
     };
 
-    // 5. Build revocation payload
+    // 5. Resolve account location (KID) by re-registering —
+    //    RFC 8555 §7.3.1: same key → 200 with existing Location
+    let acct_payload = json!({"termsOfServiceAgreed": true});
+    let (_acct, _, headers) = send_signed_request(
+        &client,
+        &dir.new_account,
+        Some(&acct_payload),
+        "Error looking up account",
+        &signing_key,
+        &None,
+        &dir,
+    ).await?;
+
+    let acct_location = headers.get("Location")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    // 6. Build revocation payload
     let mut payload = json!({ "certificate": cert_b64 });
     if let Some(r) = reason {
         if r > 10 {
@@ -75,21 +92,21 @@ pub async fn run(
         payload["reason"] = json!(r);
     }
 
-    // 6. Send signed revocation request (JWK-based signing, no account URL)
-    let (_resp, status, _headers) = send_signed_request(
+    // 7. Send signed revocation request with account KID
+    let (resp, status, _headers) = send_signed_request(
         &client,
         revoke_url,
         Some(&payload),
         "Error revoking certificate",
         &signing_key,
-        &None,
+        &acct_location,
         &dir,
     ).await?;
 
-    if status == 200 {
+    if status.is_success() {
         println!("Certificate revoked successfully.");
         Ok(())
     } else {
-        bail!("Revocation failed with unexpected HTTP status: {status}");
+        bail!("Revocation failed with HTTP status: {status} — {resp}");
     }
 }
