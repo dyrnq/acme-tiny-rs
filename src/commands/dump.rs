@@ -25,16 +25,29 @@ pub enum DumpFormat {
 }
 
 /// Dump the TLS certificate chain from a domain.
-pub async fn run(domain: &str, default_port: u16, output: Option<&str>, format: DumpFormat) -> Result<()> {
+pub async fn run(domain: &str, default_port: u16, output: Option<&str>, format: DumpFormat, insecure: bool) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    // Build TLS connector
-    let root_store = rustls::RootCertStore {
-        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    let config = if insecure {
+        use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+        #[derive(Debug)]
+        struct NoVerify;
+        impl ServerCertVerifier for NoVerify {
+            fn verify_server_cert(&self, _: &rustls::pki_types::CertificateDer<'_>, _: &[rustls::pki_types::CertificateDer<'_>], _: &rustls::pki_types::ServerName<'_>, _: &[u8], _: rustls::pki_types::UnixTime) -> std::result::Result<ServerCertVerified, rustls::Error> { Ok(ServerCertVerified::assertion()) }
+            fn verify_tls12_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
+            fn verify_tls13_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
+            fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> { vec![rustls::SignatureScheme::RSA_PKCS1_SHA256, rustls::SignatureScheme::ECDSA_NISTP256_SHA256] }
+        }
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerify))
+            .with_no_client_auth()
+    } else {
+        let root_store = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
     };
-    let config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
     let connector = TlsConnector::from(Arc::new(config));
 
     // Parse host[:port]

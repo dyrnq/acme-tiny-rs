@@ -300,10 +300,12 @@ run_test "revoke certificate via pebble" \
 run_test "dump TLS certificate chain" \
     bash -c "
         openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/dmp.key -out ${TMPDIR}/dmp.crt -days 1 -subj /CN=dump-test -nodes 2>/dev/null
-        openssl s_server -cert ${TMPDIR}/dmp.crt -key ${TMPDIR}/dmp.key -port 5445 -quiet 2>/dev/null &
+        PORT=5445
+        while fuser \$PORT/tcp 2>/dev/null; do PORT=\$((PORT+1)); done
+        openssl s_server -cert ${TMPDIR}/dmp.crt -key ${TMPDIR}/dmp.key -port \$PORT -tls1_2 -www 2>/dev/null &
         PID=\$!
         sleep 1
-        ${BINARY} dump localhost:5445 2>/dev/null | grep -q 'CERTIFICATE'
+        ${BINARY} dump localhost:\$PORT -k 2>/dev/null | grep -q 'CERTIFICATE'
         RET=\$?
         kill \$PID 2>/dev/null
         exit \$RET

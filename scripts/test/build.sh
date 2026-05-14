@@ -19,4 +19,4 @@ fi
 cd "${PROJECT_DIR}"
 
 echo "--- Build ---"
-cargo build --release 2>&1 | grep -E "Compiling|Finished|warning" || true
+cargo build --release 2>&1 | grep -E "Compiling|Finished|warning|error" || true

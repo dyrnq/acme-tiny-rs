@@ -213,6 +213,9 @@ enum Commands {
         /// Output format
         #[arg(long = "format", default_value = "pem")]
         format: commands::dump::DumpFormat,
+        /// Accept self-signed certificates (-k like curl)
+        #[arg(short = 'k', long = "insecure")]
+        insecure: bool,
     },
     /// Revoke a certificate (RFC 8555 §7.6)
     Revoke {
@@ -1348,8 +1351,8 @@ async fn main() -> Result<()> {
             Commands::Inspect { domains, port, json } => {
                 return commands::inspect::run(&domains, port, json).await;
             }
-            Commands::Dump { domain, port, output, format } => {
-                return commands::dump::run(&domain, port, output.as_deref(), format).await;
+            Commands::Dump { domain, port, output, format, insecure } => {
+                return commands::dump::run(&domain, port, output.as_deref(), format, insecure).await;
             }
             Commands::Revoke { cert, account_key, directory_url, server, reason, ca_bundle, insecure } => {
                 let dir_url = directory_url
