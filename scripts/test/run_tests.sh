@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# ⚠️  DEPRECATED — use integration-test.sh instead.
+# This file is kept for reference only and will be removed in a future release.
 # acme-tiny-rs integration test suite
 # Usage: ./run_tests.sh [--pebble-dir /opt/pebble]
 set -euo pipefail
+# shellcheck disable=SC2016
+echo "⚠️  run_tests.sh is DEPRECATED — use integration-test.sh instead." >&2
+exit 1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
