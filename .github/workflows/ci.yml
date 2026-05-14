@@ -76,4 +76,4 @@ jobs:
           echo "PEBBLE_DIR=/opt/pebble" >> "$GITHUB_ENV"
 
       - name: Run integration tests
-        run: bash scripts/test/run_tests.sh
+        run: bash scripts/test/integration-test.sh

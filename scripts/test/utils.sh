@@ -46,10 +46,16 @@ gen_test_keys() {
         -addext "subjectAltName=DNS:${TEST_DOMAIN}" \
         -out "${dir}/domain.csr" 2>/dev/null
 
-    # CN-only CSR
+    # CN-only CSR (for testing — Pebble does NOT support CN-only CSRs per RFC 8555)
     openssl req -new -sha256 -key "${dir}/domain.key" \
         -subj "/CN=${TEST_DOMAIN}" \
         -out "${dir}/cn.csr" 2>/dev/null
+
+    # CN + SAN CSR (both CN and SAN contain the same domain — recommended practice)
+    openssl req -new -sha256 -key "${dir}/domain.key" \
+        -subj "/CN=${TEST_DOMAIN}" \
+        -addext "subjectAltName=DNS:${TEST_DOMAIN}" \
+        -out "${dir}/cn_san.csr" 2>/dev/null
 
     # Invalid domain CSR (unicode characters)
     printf "[SAN]\nsubjectAltName=DNS:\xC3\xA0\xC2\xB2\xC2\xA0.com\n" > "${dir}/invalid.conf"

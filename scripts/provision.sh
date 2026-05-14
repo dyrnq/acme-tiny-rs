@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd -P)
+# Self-logging: line-buffered tee to /vagrant/provision.log (VM only)
+if [ -d /vagrant ]; then
+    exec > >(stdbuf -oL tee -a /vagrant/provision.log) 2>&1
+fi
+echo "=== provision.sh started at $(date) ==="
+
+# When run by vagrant provision, BASH_SOURCE is /tmp/vagrant-shell — use /vagrant/scripts
+if [[ "${BASH_SOURCE[0]}" == /tmp/* ]]; then
+    SCRIPT_DIR="/vagrant/scripts"
+else
+    SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd -P)
+fi
 
 echo "${SCRIPT_DIR}"
 
@@ -204,7 +215,7 @@ fun_misc() {
     timedatectl set-timezone "Asia/Shanghai"
     echo "${HOSTNAME}"
     DEBIAN_FRONTEND=noninteractive apt update;
-    DEBIAN_FRONTEND=noninteractive apt install -y jq wget curl vim git net-tools netcat-openbsd gosu aria2;
+    DEBIAN_FRONTEND=noninteractive apt install -y jq wget curl vim git net-tools netcat-openbsd gosu aria2 build-essential;
     if [ -f "/etc/ssh/sshd_config.d/60-cloudimg-settings.conf" ]; then
         sed -i "s|^PasswordAuthentication.*|PasswordAuthentication yes|g" /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
         systemctl restart sshd
@@ -233,9 +244,8 @@ esac
 
 DEBIAN_FRONTEND=noninteractive apt update;
 DEBIAN_FRONTEND=noninteractive apt install "${mysql_client_pkg}" -y;
-DEBIAN_FRONTEND=noninteractive apt install openjdk-21-jdk-headless openjdk-21-jre-headless -y
+# DEBIAN_FRONTEND=noninteractive apt install openjdk-21-jdk-headless openjdk-21-jre-headless -y
 fi
-
 
 
 
@@ -254,72 +264,81 @@ fi
 fi
 }
 
-fun_install_rust() {
-    # Use USTC mirrors for rustup acceleration
-    export RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup
-    export RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static
 
-    # Install Rust via rustup (official installer)
-    if ! command -v rustup >/dev/null 2>&1; then
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        # shellcheck disable=SC1090
-        source "$HOME/.cargo/env"
-    fi
-
-    # Configure crates.io mirror (USTC)
-    mkdir -p "${HOME}"/.cargo
-    # https://mirrors.ustc.edu.cn/help/crates.io-index.html
-    cat >> "${HOME}"/.cargo/config.toml << 'EOF'
-[source.crates-io]
-replace-with = 'ustc'
-
-[source.ustc]
-registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
-
-[registries.ustc]
-index = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
-EOF
-
-    # Ensure stable toolchain is installed
-    rustup toolchain install stable
-    rustup default stable
-
-    # Add cross-compilation targets for static builds
-    rustup target add x86_64-unknown-linux-musl
-    rustup target add aarch64-unknown-linux-musl
-    rustup target add armv7-unknown-linux-musleabihf
-
-    # Install musl toolchain for static linking
-    if command -v apt >/dev/null 2>&1; then
-        DEBIAN_FRONTEND=noninteractive apt update
-        DEBIAN_FRONTEND=noninteractive apt install -y musl-tools musl-dev build-essential pkg-config
-    fi
-
-    # Install cargo tools
-    cargo install cargo-audit 2>/dev/null || true
-    cargo install cargo-deny 2>/dev/null || true
-
-    # Verify installation
-    rustc --version
-    cargo --version
-    rustup --version
-
-    echo "Rust development environment ready."
-}
 
 fun_needrestart
 fun_chmirror
-# fun_system
+fun_system
 # while true; do
 #   fun_install_docker
 #   if docker ps;
 #     then break;
 #   fi
 # done
-fun_install_rust
 fun_misc
 
+##############################################
+# Rust toolchain installation
+##############################################
 
+mkdir -p /usr/local/rustup /usr/local/cargo
+export RUSTUP_HOME=/usr/local/rustup
+export CARGO_HOME=/usr/local/cargo
+export RUSTUP_UPDATE_ROOT=https://mirrors.aliyun.com/rustup/rustup
+export RUSTUP_DIST_SERVER=https://mirrors.aliyun.com/rustup
 
+if ! command -v rustup >/dev/null 2>&1; then
+    RUSTUP_URL="https://mirrors.aliyun.com/rustup/rustup/dist/x86_64-unknown-linux-gnu/rustup-init"
+    if curl --connect-timeout 30 --proto '=https' --tlsv1.2 -sSfL "$RUSTUP_URL" -o /tmp/rustup-init 2>/dev/null; then
+        chmod +x /tmp/rustup-init && /tmp/rustup-init -y --profile minimal --default-toolchain stable && rm -f /tmp/rustup-init
+    else
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    fi
+fi
+
+source "${CARGO_HOME}/env"
+
+# Append RUSTUP_HOME and CARGO_HOME to cargo/env so that
+# `source /usr/local/cargo/env` is sufficient in all contexts
+# (including vagrant ssh -- bash -s non-login shells).
+{
+  echo ""
+  echo "export RUSTUP_HOME=/usr/local/rustup"
+  echo "export CARGO_HOME=/usr/local/cargo"
+} >> "${CARGO_HOME}/env"
+
+# crates.io mirror
+if ! grep -q 'aliyun' "${CARGO_HOME}/config.toml" 2>/dev/null; then
+    cat > "${CARGO_HOME}/config.toml" << 'CRATES'
+[source.crates-io]
+replace-with = 'aliyun'
+[source.aliyun]
+registry = "sparse+https://mirrors.aliyun.com/crates.io-index/"
+CRATES
+fi
+
+rustup toolchain install stable --profile minimal 2>/dev/null || true
+rustup default stable
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf
+
+chmod -R a+rwX "${CARGO_HOME}" "${RUSTUP_HOME}" 2>/dev/null || true
+
+cat > /etc/profile.d/rust.sh << 'RUSTENV'
+export RUSTUP_HOME=/usr/local/rustup
+export CARGO_HOME=/usr/local/cargo
+export PATH="/usr/local/cargo/bin:$PATH"
+RUSTENV
+chmod 644 /etc/profile.d/rust.sh
+
+# /etc/environment is read by all login sessions (PAM),
+# ensuring RUSTUP_HOME/CARGO_HOME are set even for non-login shells
+# (e.g. vagrant ssh -- bash -s).
+cat > /etc/environment << 'ENVEOF'
+RUSTUP_HOME=/usr/local/rustup
+CARGO_HOME=/usr/local/cargo
+PATH="/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENVEOF
+
+echo "Rust $(rustc --version) installed system-wide"
 
 

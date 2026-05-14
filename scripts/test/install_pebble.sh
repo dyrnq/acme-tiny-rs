@@ -12,13 +12,19 @@ mkdir -p "${PEBBLE_DIR}" "${PEBBLE_CERT_DIR}"
 
 # Download pebble binary
 if [ "${PEBBLE_VERSION}" = "latest" ]; then
-    PEBBLE_URL="https://github.com/letsencrypt/pebble/releases/latest/download/pebble-linux-amd64.tar.gz"
+    PEBBLE_PATH="releases/latest/download/pebble-linux-amd64.tar.gz"
 else
-    PEBBLE_URL="https://github.com/letsencrypt/pebble/releases/download/${PEBBLE_VERSION}/pebble-linux-amd64.tar.gz"
+    PEBBLE_PATH="releases/download/${PEBBLE_VERSION}/pebble-linux-amd64.tar.gz"
 fi
 
-echo "Downloading pebble from ${PEBBLE_URL}..."
-curl -fsSL "${PEBBLE_URL}" -o /tmp/pebble.tar.gz
+PEBBLE_URL="https://github.com/letsencrypt/pebble/${PEBBLE_PATH}"
+PEBBLE_MIRROR="https://files.m.daocloud.io/github.com/letsencrypt/pebble/${PEBBLE_PATH}"
+
+echo "Downloading pebble..."
+if ! curl -fsSL --connect-timeout 10 "${PEBBLE_MIRROR}" -o /tmp/pebble.tar.gz 2>/dev/null; then
+    echo "  mirror failed, trying direct download..."
+    curl -fsSL "${PEBBLE_URL}" -o /tmp/pebble.tar.gz
+fi
 tar -xzf /tmp/pebble.tar.gz -C /tmp
 # Find the pebble binary in extracted tree
 PEBBLE_BIN=$(find /tmp -name pebble -type f 2>/dev/null | head -1)
