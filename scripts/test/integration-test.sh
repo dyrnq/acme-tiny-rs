@@ -254,6 +254,60 @@ run_test "ari subcommand --help" \
         ${BINARY} ari --help 2>/dev/null | grep -q 'cert'
     "
 
+run_test "inspect subcommand --help" \
+    bash -c "
+        ${BINARY} inspect --help 2>/dev/null | grep -q 'domain'
+    "
+
+run_test "inspect subcommand table output" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/insp.key -out ${TMPDIR}/insp.crt -days 1 -subj /CN=inspect-test -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/insp.crt -key ${TMPDIR}/insp.key -port 5443 -quiet 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5443 2>/dev/null | grep -q 'inspect-test'
+        kill \$PID 2>/dev/null
+    "
+
+run_test "inspect subcommand JSON output" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/insp2.key -out ${TMPDIR}/insp2.crt -days 1 -subj /CN=json-inspect -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/insp2.crt -key ${TMPDIR}/insp2.key -port 5444 -quiet 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5444 --json 2>/dev/null | grep -q 'subject_cn'
+        kill \$PID 2>/dev/null
+    "
+
+run_test "revoke certificate via pebble" \
+    bash -c "
+        # Issue a cert first
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            > ${TMPDIR}/revokable.crt 2>/dev/null || exit 1
+        # Revoke it (pebble CA already trusted via exported SSL_CERT_FILE)
+        ${BINARY} \
+            revoke --cert ${TMPDIR}/revokable.crt \
+            --account-key ${KEYS_DIR}/account.key \
+            --directory-url ${DIRECTORY_URL} \
+            > /dev/null 2>&1
+    "
+
+run_test "dump TLS certificate chain" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/dmp.key -out ${TMPDIR}/dmp.crt -days 1 -subj /CN=dump-test -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/dmp.crt -key ${TMPDIR}/dmp.key -port 5445 -quiet 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} dump localhost:5445 2>/dev/null | grep -q 'CERTIFICATE'
+        RET=\$?
+        kill \$PID 2>/dev/null
+        exit \$RET
+    "
+
 # ==== Summary ====
 
 echo ""
