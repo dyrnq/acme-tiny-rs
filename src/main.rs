@@ -123,6 +123,10 @@ struct Cli {
     #[arg(long = "agree-tos", default_value_t = true)]
     agree_tos: bool,
 
+    /// ACME profile name for the new order (e.g., tlsserver, shortlived)
+    #[arg(short = 'P', long = "profile")]
+    profile: Option<String>,
+
     /// Write certificate to file instead of stdout
     #[arg(short = 'o', long = "output")]
     output: Option<String>,
@@ -1013,7 +1017,10 @@ async fn get_crt(
             serde_json::json!({"type": id_type, "value": d})
         })
         .collect();
-    let order_payload = serde_json::json!({"identifiers": identifiers});
+    let mut order_payload = serde_json::json!({"identifiers": identifiers});
+    if let Some(ref p) = cli.profile {
+        order_payload["profile"] = serde_json::json!(p);
+    }
 
     let (order, _, headers) = send_signed_request(
         &client,
