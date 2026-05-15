@@ -209,6 +209,9 @@ enum Commands {
         /// Verbose output (-v, -vv, -vvv)
         #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
         verbose: u8,
+        /// Disable TLS certificate verification (testing only)
+        #[arg(short = 'k', long = "insecure", hide = true)]
+        insecure: bool,
     },
     /// Inspect TLS certificate details (table or JSON)
     Inspect {
@@ -1401,8 +1404,8 @@ async fn main() -> Result<()> {
                 }
                 return Ok(());
             }
-            Commands::InspectCa { server, verbose } => {
-                return ca::inspect_ca(&server, verbose).await;
+            Commands::InspectCa { server, verbose, insecure } => {
+                return ca::inspect_ca(&server, verbose, insecure).await;
             }
             Commands::Inspect { domains, port, json, insecure, lint, no_header } => {
                 return commands::inspect::run(&domains, port, json, insecure, lint, no_header).await;

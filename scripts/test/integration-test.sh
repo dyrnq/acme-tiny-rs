@@ -291,6 +291,28 @@ else
     FAILED=$((FAILED+1))
 fi
 
+# ==== list-ca / inspect-ca ====
+
+run_test "list-ca table output" \
+    bash -c "
+        ${BINARY} list-ca 2>/dev/null | grep -q 'Encrypt'
+    "
+
+run_test "list-ca --json output" \
+    bash -c "
+        ${BINARY} list-ca --json 2>/dev/null | grep -q '\"id\"'
+    "
+
+run_test "list-ca --no-header" \
+    bash -c "
+        ! ${BINARY} list-ca --no-header 2>/dev/null | grep -q 'Notes'
+    "
+
+run_test "inspect-ca pebble directory" \
+    bash -c "
+        ${BINARY} inspect-ca --server pebble -k 2>/dev/null | grep -q 'newOrder'
+    "
+
 # ==== TLS version compatibility ====
 
 run_test "TLS 1.3 inspect" \

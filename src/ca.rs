@@ -229,7 +229,7 @@ pub fn cas_as_json() -> Vec<serde_json::Value> {
     })).collect()
 }
 
-pub async fn inspect_ca(server: &str, verbose: u8) -> anyhow::Result<()> {
+pub async fn inspect_ca(server: &str, verbose: u8, insecure: bool) -> anyhow::Result<()> {
     let url = match resolve(server)? {
         ResolvedCA::Known(ca) => ca.directory_url.to_string(),
         ResolvedCA::Custom(u) => u,
@@ -237,7 +237,11 @@ pub async fn inspect_ca(server: &str, verbose: u8) -> anyhow::Result<()> {
     if verbose >= 1 {
         eprintln!("[inspect-ca] GET {url}");
     }
-    let client = reqwest::Client::new();
+    let client = if insecure {
+        reqwest::Client::builder().danger_accept_invalid_certs(true).build()?
+    } else {
+        reqwest::Client::new()
+    };
     let resp = client.get(&url)
         .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
         .send().await?;
