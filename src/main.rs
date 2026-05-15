@@ -152,7 +152,7 @@ struct Cli {
     ca_bundle: Option<String>,
 
     /// Disable TLS certificate verification (testing only)
-    #[arg(long = "insecure", hide = true)]
+    #[arg(short = 'k', long = "insecure", hide = true)]
     insecure: bool,
 
     #[command(subcommand)]
@@ -185,7 +185,7 @@ enum Commands {
         #[arg(long = "server", default_value = DEFAULT_SERVER)]
         server: String,
         /// Disable TLS certificate verification (testing only)
-        #[arg(long = "insecure", hide = true)]
+        #[arg(short = 'k', long = "insecure", hide = true)]
         insecure: bool,
     },
     /// List all known ACME CA presets
@@ -241,7 +241,7 @@ enum Commands {
         #[arg(long = "ca-bundle")]
         ca_bundle: Option<String>,
         /// Disable TLS certificate verification (testing only)
-        #[arg(long = "insecure", hide = true)]
+        #[arg(short = 'k', long = "insecure", hide = true)]
         insecure: bool,
     },
     /// Print version information
