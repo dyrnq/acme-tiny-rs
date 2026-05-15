@@ -6,8 +6,7 @@ use base64::Engine;
 use x509_parser::prelude::*;
 
 /// Query the ACME renewalInfo endpoint and output JSON to stdout.
-pub async fn run(cert_path: &str, directory_url: &str) -> Result<()> {
-    // Read and parse the certificate
+pub async fn run(cert_path: &str, directory_url: &str, insecure: bool) -> Result<()> {
     let cert_pem = std::fs::read(cert_path)
         .with_context(|| format!("Failed to read {cert_path}"))?;
     let (_, pem) = x509_parser::pem::pem_to_der(&cert_pem)
@@ -30,7 +29,11 @@ pub async fn run(cert_path: &str, directory_url: &str) -> Result<()> {
     let cert_id = format!("{}.{}", b64(&aki), b64(&serial));
 
     // Fetch directory to find renewalInfo endpoint
-    let client = reqwest::Client::new();
+    let client = if insecure {
+        reqwest::Client::builder().danger_accept_invalid_certs(true).build().context("Failed to create HTTP client")?
+    } else {
+        reqwest::Client::new()
+    };
     let directory: serde_json::Value = client
         .get(directory_url)
         .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
