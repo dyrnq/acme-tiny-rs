@@ -58,7 +58,7 @@ pub const KNOWN_CAS: &[KnownCA] = &[
     KnownCA {
         id: "zerossl",
         name: "ZeroSSL",
-        directory_url: "https://api.zerossl.com/acme/directory",
+        directory_url: "https://acme.zerossl.com/v2/DV90",
         website: "https://zerossl.com",
         eab_required: true,
         wildcard_supported: true,
@@ -208,6 +208,27 @@ pub fn print_ca_table() {
     println!("Use --server <id> to select a CA, or provide a full URL.");
     println!("Example: --server zerossl");
     println!("Example: --server https://my-ca.example.com/directory");
+}
+
+/// Fetch ACME directory and print raw JSON.
+pub async fn inspect_ca(server: &str, verbose: u8) -> anyhow::Result<()> {
+    let url = match resolve(server)? {
+        ResolvedCA::Known(ca) => ca.directory_url.to_string(),
+        ResolvedCA::Custom(u) => u,
+    };
+    if verbose >= 1 {
+        eprintln!("[inspect-ca] GET {url}");
+    }
+    let client = reqwest::Client::new();
+    let resp = client.get(&url)
+        .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
+        .send().await?;
+    if verbose >= 1 {
+        eprintln!("[inspect-ca] Response: HTTP {}", resp.status());
+    }
+    let dir: serde_json::Value = resp.json().await?;
+    println!("{}", serde_json::to_string_pretty(&dir)?);
+    Ok(())
 }
 
 #[cfg(test)]

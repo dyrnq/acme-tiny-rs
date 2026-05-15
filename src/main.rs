@@ -194,6 +194,15 @@ enum Commands {
     },
     /// List all known ACME CA presets
     ListCa,
+    /// Inspect ACME CA directory (fetch raw JSON)
+    InspectCa {
+        /// ACME server preset name or URL
+        #[arg(long = "server", default_value = DEFAULT_SERVER)]
+        server: String,
+        /// Verbose output (-v, -vv, -vvv)
+        #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+        verbose: u8,
+    },
     /// Inspect TLS certificate details (table or JSON)
     Inspect {
         /// Domain(s) to check (host[:port] format, port defaults to 443)
@@ -1379,6 +1388,9 @@ async fn main() -> Result<()> {
             Commands::ListCa => {
                 ca::print_ca_table();
                 return Ok(());
+            }
+            Commands::InspectCa { server, verbose } => {
+                return ca::inspect_ca(&server, verbose).await;
             }
             Commands::Inspect { domains, port, json, insecure, lint, no_header } => {
                 return commands::inspect::run(&domains, port, json, insecure, lint, no_header).await;
