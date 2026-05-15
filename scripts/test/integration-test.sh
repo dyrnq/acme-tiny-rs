@@ -293,6 +293,56 @@ run_test "inspect subcommand -k insecure flag" \
         exit \$RET
     "
 
+run_test "inspect subcommand --lint (detects issues)" \
+    bash -c "
+        # RSA 2048 is fine for TLS, but 5-day expiry triggers lint
+        openssl req -x509 -newkey rsa:2048 -sha256 -keyout ${TMPDIR}/lintwarn.key -out ${TMPDIR}/lintwarn.crt -days 5 -subj /CN=lint-warn -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/lintwarn.crt -key ${TMPDIR}/lintwarn.key -port 5446 -tls1_2 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5446 -k --lint 2>/dev/null | grep -q 'Expires in less than 30'
+        RET=\$?
+        kill \$PID 2>/dev/null
+        exit \$RET
+    "
+
+run_test "inspect subcommand --lint (clean cert)" \
+    bash -c "
+        # RSA 4096 + SHA-256 = strong cert, should report OK
+        openssl req -x509 -newkey rsa:4096 -sha256 -keyout ${TMPDIR}/lintok.key -out ${TMPDIR}/lintok.crt -days 365 -subj /CN=lint-ok -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/lintok.crt -key ${TMPDIR}/lintok.key -port 5447 -tls1_2 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5447 -k --lint 2>/dev/null | grep -q 'localhost.*OK'
+        RET=\$?
+        kill \$PID 2>/dev/null
+        exit \$RET
+    "
+
+run_test "inspect --lint --json (warnings array)" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -sha256 -keyout ${TMPDIR}/ljw.key -out ${TMPDIR}/ljw.crt -days 5 -subj /CN=lj-warn -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/ljw.crt -key ${TMPDIR}/ljw.key -port 5448 -tls1_2 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5448 -k --lint --json 2>/dev/null | grep -q '\"warnings\"'
+        RET=\$?
+        kill \$PID 2>/dev/null
+        exit \$RET
+    "
+
+run_test "inspect --lint --json (clean, empty array)" \
+    bash -c "
+        openssl req -x509 -newkey rsa:4096 -sha256 -keyout ${TMPDIR}/ljk.key -out ${TMPDIR}/ljk.crt -days 365 -subj /CN=lj-ok -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/ljk.crt -key ${TMPDIR}/ljk.key -port 5449 -tls1_2 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5449 -k --lint --json 2>/dev/null | grep -q '\"warnings\": \[\]'
+        RET=\$?
+        kill \$PID 2>/dev/null
+        exit \$RET
+    "
+
 run_test "revoke certificate via pebble" \
     bash -c "
         # Issue a cert first

@@ -27,10 +27,11 @@ struct CertInfo {
     #[serde(rename = "key_alg")]
     public_key_algorithm: String,
     self_signed: bool,
+    warnings: Vec<String>,
 }
 
 /// Check TLS certificates for one or more domains.
-pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bool) -> Result<()> {
+pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bool, lint: bool) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let config = if insecure {
@@ -157,6 +158,8 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
 
         let self_signed = subject_cn == issuer_o && subject_cn != "-";
 
+        let warnings = if lint { lint_cert(&cert, now) } else { Vec::new() };
+
         results.push(CertInfo {
             domain: host,
             port,
@@ -169,35 +172,57 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
             signature_algorithm: sig_alg,
             public_key_algorithm: key_alg,
             self_signed,
+            warnings,
         });
     }
 
     if json {
         println!("{}", serde_json::to_string_pretty(&results)?);
     } else {
-        // Table header
-        println!(
-            "{:<25} {:>5}  {:<20}  {:<20}  {:>4}  {:>8}  {:^10}  {}",
-            "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Not After"
-        );
-        println!(
-            "{:-<25} {:-<5}  {:-<20}  {:-<20}  {:-<4}  {:-<8}  {:-<10}  {:-<30}",
-            "", "", "", "", "", "", "", ""
-        );
+        // Table header — add Lint column when --lint is set
+        if lint {
+            println!(
+                "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {:^25}  {}",
+                "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Lint", "Not After"
+            );
+        } else {
+            println!(
+                "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {}",
+                "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Not After"
+            );
+        }
+        let sep = "-".repeat(120);
+        println!("{sep}");
 
         for r in &results {
             let self_sig = if r.self_signed { "YES" } else { "no" };
-            println!(
-                "{:<25} {:>5}  {:<20}  {:<20}  {:>4}  {:>8}  {:>10}  {}",
-                r.domain,
-                r.port,
-                truncate(&r.subject_cn, 20),
-                truncate(&r.issuer_o, 20),
-                r.days_left,
-                self_sig,
-                truncate(&r.public_key_algorithm, 10),
-                r.not_after,
-            );
+            let lint_col = if r.warnings.is_empty() { "OK" } else { &r.warnings[0] };
+            if lint {
+                println!(
+                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:>10}  {:<25}  {}",
+                    r.domain,
+                    r.port,
+                    truncate(&r.subject_cn, 15),
+                    truncate(&r.issuer_o, 15),
+                    r.days_left,
+                    self_sig,
+                    truncate(&r.public_key_algorithm, 10),
+                    truncate(lint_col, 25),
+                    r.not_after,
+                );
+            } else {
+                println!(
+                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:>10}  {}",
+                    r.domain,
+                    r.port,
+                    truncate(&r.subject_cn, 15),
+                    truncate(&r.issuer_o, 15),
+                    r.days_left,
+                    self_sig,
+                    truncate(&r.public_key_algorithm, 10),
+                    r.not_after,
+                );
+            }
         }
     }
 
@@ -210,4 +235,33 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max - 1])
     }
+}
+
+fn lint_cert(cert: &x509_parser::certificate::X509Certificate<'_>, now: i64) -> Vec<String> {
+    let mut w = Vec::new();
+    let not_before = cert.validity().not_before.timestamp();
+    let not_after = cert.validity().not_after.timestamp();
+
+    if now < not_before { w.push("Not yet valid (notBefore is in the future)".into()); }
+    if now > not_after { w.push("EXPIRED — notAfter has passed".into()); }
+    if not_after - now < 86400 * 30 { w.push("Expires in less than 30 days".into()); }
+
+    let sig_alg = format!("{:?}", cert.signature_algorithm.algorithm);
+    if sig_alg.to_lowercase().contains("sha1") {
+        w.push("Weak signature algorithm: SHA-1".into());
+    }
+
+    let key_alg = format!("{:?}", cert.public_key().algorithm);
+    if key_alg.to_lowercase().contains("rsa") {
+        let bits = cert.public_key().raw.len() * 8;
+        if bits < 2048 { w.push(format!("RSA key too small: {bits} bits (min 2048)")); }
+    }
+
+    if cert.subject().iter_common_name().next().is_none()
+        && cert.extensions().iter().all(|e| !format!("{:?}", e.oid).contains("subjectAltName"))
+    {
+        w.push("No Subject CN or SAN — may be rejected by browsers".into());
+    }
+
+    w
 }
