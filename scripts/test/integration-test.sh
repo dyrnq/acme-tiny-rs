@@ -313,6 +313,40 @@ run_test "inspect-ca pebble directory" \
         ${BINARY} inspect-ca --server pebble -k 2>/dev/null | grep -q 'newOrder'
     "
 
+# ==== Profile (-P) ====
+
+run_test "issue cert without -P (default profile)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            > ${TMPDIR}/noprofile.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/noprofile.crt 'Pebble'
+    "
+
+run_test "issue cert with -P default" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} -P default \
+            > ${TMPDIR}/defprofile.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/defprofile.crt 'Pebble'
+    "
+
+run_test "issue cert with unsupported -P fails" \
+    bash -c "
+        ! ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} -P notsupported \
+            > /dev/null 2>&1
+    "
+
 # ==== TLS version compatibility ====
 
 run_test "TLS 1.3 inspect" \
