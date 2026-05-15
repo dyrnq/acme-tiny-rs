@@ -31,7 +31,7 @@ struct CertInfo {
 }
 
 /// Check TLS certificates for one or more domains.
-pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bool, lint: bool) -> Result<()> {
+pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bool, lint: bool, no_header: bool) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let config = if insecure {
@@ -179,20 +179,22 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
     if json {
         println!("{}", serde_json::to_string_pretty(&results)?);
     } else {
-        // Table header — add Lint column when --lint is set
-        if lint {
-            println!(
-                "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {:^25}  {}",
-                "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Lint", "Not After"
-            );
-        } else {
-            println!(
-                "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {}",
-                "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Not After"
-            );
+        // Table header — skip when --no-header is set
+        if !no_header {
+            if lint {
+                println!(
+                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {:^25}  {}",
+                    "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Lint", "Not After"
+                );
+            } else {
+                println!(
+                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {}",
+                    "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Not After"
+                );
+            }
+            let sep = "-".repeat(120);
+            println!("{sep}");
         }
-        let sep = "-".repeat(120);
-        println!("{sep}");
 
         for r in &results {
             let self_sig = if r.self_signed { "YES" } else { "no" };

@@ -207,6 +207,9 @@ enum Commands {
         /// Lint certificate for RFC 5280 compliance issues
         #[arg(long = "lint")]
         lint: bool,
+        /// Suppress table header and separator rows
+        #[arg(long = "no-header")]
+        no_header: bool,
     },
     /// Dump TLS certificate chain (like openssl s_client -showcerts)
     Dump {
@@ -1357,8 +1360,8 @@ async fn main() -> Result<()> {
                 ca::print_ca_table();
                 return Ok(());
             }
-            Commands::Inspect { domains, port, json, insecure, lint } => {
-                return commands::inspect::run(&domains, port, json, insecure, lint).await;
+            Commands::Inspect { domains, port, json, insecure, lint, no_header } => {
+                return commands::inspect::run(&domains, port, json, insecure, lint, no_header).await;
             }
             Commands::Dump { domain, port, output, format, insecure } => {
                 return commands::dump::run(&domain, port, output.as_deref(), format, insecure).await;
