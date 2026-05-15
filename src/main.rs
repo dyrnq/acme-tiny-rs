@@ -93,7 +93,7 @@ struct Cli {
     #[arg(long = "check-port")]
     check_port: Option<u16>,
 
-    /// Challenge type: http-01 (default), dns-01, tls-alpn-01, or dns-persist-01
+    /// Challenge type: http-01 (default), dns-01, tls-alpn-01, dns-persist-01, or dns-account-01 (draft)
     #[arg(long = "challenge-type", default_value = "http-01")]
     challenge_type: String,
 
@@ -1064,8 +1064,13 @@ async fn get_crt(
         let keyauthorization = format!("{cleaned_token}.{thumbprint}");
 
         // Pre-compute DNS challenge info if needed (available for cleanup after poll)
-        let dns_cleanup_info: Option<(String, String)> = if challenge_type == "dns-01" || challenge_type == "dns-persist-01" {
-            let txt_value = dns::dns_txt_value(&cleaned_token, &thumbprint);
+        let dns_cleanup_info: Option<(String, String)> = if challenge_type == "dns-01" || challenge_type == "dns-persist-01" || challenge_type == "dns-account-01" {
+            let txt_value = if challenge_type == "dns-account-01" {
+                // dns-account-01 (draft): TXT = SHA256(thumbprint), no token
+                crate::b64(&sha2::Sha256::digest(thumbprint.as_bytes()))
+            } else {
+                dns::dns_txt_value(&cleaned_token, &thumbprint)
+            };
             let effective_domain = dns::cname::resolve_challenge_domain(&domain).await;
             if effective_domain != domain {
                 log::info!(
@@ -1077,7 +1082,7 @@ async fn get_crt(
             if challenge_type == "dns-01" {
                 Some((effective_domain, txt_value))
             } else {
-                // dns-persist-01: intentionally skip cleanup
+                // dns-persist-01 / dns-account-01: intentionally skip cleanup
                 None
             }
         } else {
@@ -1177,7 +1182,7 @@ async fn get_crt(
             let _ = dns::create_provider(&cli.dns_provider)
                 .and_then(|p| p.cleanup(&eff_domain, &txt_val));
         }
-        // dns-persist-01: intentionally skip cleanup — record persists for future renewals
+        // dns-persist-01 / dns-account-01: intentionally skip cleanup — record persists
 
         // Check poll result
         let authorization = poll_result?;
@@ -1388,7 +1393,7 @@ async fn main() -> Result<()> {
     // Wildcard domains require dns-01 challenge (RFC 8555 §8.4)
     let has_wildcard = domains.iter().any(|d| d.starts_with("*."));
     let challenge_type = cli.challenge_type.to_lowercase();
-    let is_dns_challenge = challenge_type == "dns-01" || challenge_type == "dns-persist-01";
+    let is_dns_challenge = challenge_type == "dns-01" || challenge_type == "dns-persist-01" || challenge_type == "dns-account-01";
     if has_wildcard && !is_dns_challenge {
         bail!(
             "Wildcard domain requires --challenge-type dns-01.\n\
