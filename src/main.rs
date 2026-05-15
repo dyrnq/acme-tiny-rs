@@ -256,6 +256,12 @@ enum Commands {
         #[arg(short = 'k', long = "insecure", hide = true)]
         insecure: bool,
     },
+    /// Output JWK thumbprint (RFC 7638) for stateless HTTP-01 / dns-account-01
+    Thumbprint {
+        /// Path to the ACME account private key
+        #[arg(long = "account-key")]
+        account_key: String,
+    },
     /// Print version information
     Version,
 }
@@ -1356,6 +1362,7 @@ async fn main() -> Result<()> {
     // Dispatch subcommand
     if let Some(cmd) = cli.command {
         match cmd {
+            Commands::Thumbprint { account_key } => return commands::thumbprint::run(&account_key),
             Commands::Version => return commands::version::run(),
             Commands::Ari { cert, directory_url, server, insecure, verbose } => {
                 let dir_url = directory_url
