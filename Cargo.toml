@@ -1,6 +1,6 @@
 [package]
 name = "acme-tiny-rs"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "A tiny ACME client in Rust to issue and renew TLS certs from Let's Encrypt"
 authors = ["acme-tiny-rs contributors"]
