@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -551,7 +552,11 @@ pub(crate) fn parse_account_key(path: &str) -> Result<SigningKey> {
     info!("Parsing account key...");
     let pem_data = fs::read_to_string(path)
         .with_context(|| format!("Error reading account key file: {path}"))?;
+    parse_account_key_bytes(&pem_data)
+}
 
+/// Parse account key from PEM data (used by stdin `-` support).
+pub(crate) fn parse_account_key_bytes(pem_data: &str) -> Result<SigningKey> {
     // Detect key type from PEM header
     if pem_data.contains("RSA PRIVATE KEY") {
         parse_rsa_key(&pem_data)
@@ -563,7 +568,7 @@ pub(crate) fn parse_account_key(path: &str) -> Result<SigningKey> {
             .or_else(|_| parse_ec_key(&pem_data))
             .or_else(|_| parse_ed25519_key(&pem_data))
     } else {
-        bail!("Unsupported key format in {path}");
+        bail!("Unsupported key format")
     }
 }
 

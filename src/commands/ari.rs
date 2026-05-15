@@ -3,6 +3,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use std::io::Read;
 use x509_parser::prelude::*;
 
 /// Authority Key Identifier OID (RFC 5280 §4.2.1.1)
@@ -23,8 +24,15 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     if verbose >= 1 {
         eprintln!("[ari] Reading certificate from {cert_path}");
     }
-    let cert_pem = std::fs::read(cert_path)
-        .with_context(|| format!("Failed to read {cert_path}"))?;
+    let cert_pem = if cert_path == "-" {
+        let mut buf = Vec::new();
+        std::io::stdin().read_to_end(&mut buf)
+            .with_context(|| "Failed to read certificate from stdin")?;
+        buf
+    } else {
+        std::fs::read(cert_path)
+            .with_context(|| format!("Failed to read {cert_path}"))?
+    };
     let (_, pem) = x509_parser::pem::pem_to_der(&cert_pem)
         .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
     let (_, cert) = x509_parser::parse_x509_certificate(&pem.contents)

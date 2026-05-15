@@ -249,6 +249,24 @@ run_test "version subcommand" \
         grep -q 'acme-tiny-rs v' ${TMPDIR}/version.out
     "
 
+# ==== stdin / pipe support ====
+
+run_test "thumbprint from stdin (-)" \
+    bash -c "
+        ${BINARY} thumbprint --account-key - < ${KEYS_DIR}/account.key 2>/dev/null | grep -qE '^[A-Za-z0-9_-]+$'
+    "
+
+run_test "ari from stdin (-)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            > ${TMPDIR}/stdin_cert.crt 2>/dev/null || exit 1
+        cat ${TMPDIR}/stdin_cert.crt | ${BINARY} ari --cert - --directory-url ${DIRECTORY_URL} --insecure > /dev/null 2>&1
+    "
+
 run_test "ari subcommand --help" \
     bash -c "
         ${BINARY} ari --help 2>/dev/null | grep -q 'cert'
