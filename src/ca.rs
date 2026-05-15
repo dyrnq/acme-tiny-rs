@@ -195,22 +195,40 @@ pub fn list_presets() -> String {
 }
 
 /// Print a detailed table of all known CAs.
-pub fn print_ca_table() {
-    println!();
-    println!("{:<25} {:<30} {:<8} {:<8} {}", "ID", "Name", "EAB", "Wildcard", "Notes");
-    println!("{}", "-".repeat(120));
+pub fn print_ca_table(no_header: bool) {
+    if !no_header {
+        println!();
+        println!("{:<25} {:<30} {:<8} {:<8} {}", "ID", "Name", "EAB", "Wildcard", "Notes");
+        println!("{}", "-".repeat(120));
+    }
     for ca in KNOWN_CAS {
         let eab = if ca.eab_required { "Yes" } else { "No" };
         let wildcard = if ca.wildcard_supported { "Yes" } else { "No" };
         println!("{:<25} {:<30} {:<8} {:<8} {}", ca.id, ca.name, eab, wildcard, ca.notes);
     }
-    println!();
-    println!("Use --server <id> to select a CA, or provide a full URL.");
-    println!("Example: --server zerossl");
-    println!("Example: --server https://my-ca.example.com/directory");
+    if !no_header {
+        println!();
+        println!("Use --server <id> to select a CA, or provide a full URL.");
+        println!("Example: --server zerossl");
+        println!("Example: --server https://my-ca.example.com/directory");
+    }
 }
 
 /// Fetch ACME directory and print raw JSON.
+
+/// Return all known CAs as a JSON array.
+pub fn cas_as_json() -> Vec<serde_json::Value> {
+    KNOWN_CAS.iter().map(|ca| serde_json::json!({
+        "id": ca.id,
+        "name": ca.name,
+        "directory_url": ca.directory_url,
+        "website": ca.website,
+        "eab_required": ca.eab_required,
+        "wildcard_supported": ca.wildcard_supported,
+        "notes": ca.notes,
+    })).collect()
+}
+
 pub async fn inspect_ca(server: &str, verbose: u8) -> anyhow::Result<()> {
     let url = match resolve(server)? {
         ResolvedCA::Known(ca) => ca.directory_url.to_string(),

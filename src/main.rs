@@ -193,7 +193,14 @@ enum Commands {
         verbose: u8,
     },
     /// List all known ACME CA presets
-    ListCa,
+    ListCa {
+        /// Output as JSON instead of table
+        #[arg(long = "json")]
+        json: bool,
+        /// Suppress table header and footer
+        #[arg(long = "no-header")]
+        no_header: bool,
+    },
     /// Inspect ACME CA directory (fetch raw JSON)
     InspectCa {
         /// ACME server preset name or URL
@@ -1369,7 +1376,7 @@ async fn main() -> Result<()> {
 
     // --list-ca flag
     if cli.list_ca {
-        ca::print_ca_table();
+        ca::print_ca_table(false);
         return Ok(());
     }
 
@@ -1385,8 +1392,13 @@ async fn main() -> Result<()> {
                     }));
                 return commands::ari::run(&cert, &dir_url, insecure, verbose).await;
             }
-            Commands::ListCa => {
-                ca::print_ca_table();
+            Commands::ListCa { json, no_header } => {
+                if json {
+                    let list = ca::cas_as_json();
+                    println!("{}", serde_json::to_string_pretty(&list)?);
+                } else {
+                    ca::print_ca_table(no_header);
+                }
                 return Ok(());
             }
             Commands::InspectCa { server, verbose } => {
