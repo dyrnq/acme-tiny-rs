@@ -58,7 +58,10 @@ cat > "${PEBBLE_DIR}/pebble-config.json" << EOF
         "httpPort": 5002,
         "tlsPort": 5001,
         "ocspResponderURL": "",
-        "externalAccountBindingRequired": false
+        "externalAccountBindingRequired": false,
+        "externalAccountMACKeys": {
+            "pebble-eab": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        }
     }
 }
 EOF

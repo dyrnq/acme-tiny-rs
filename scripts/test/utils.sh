@@ -92,6 +92,9 @@ start_pebble() {
     # Trust pebble cert
     export SSL_CERT_FILE="${PEBBLE_CERT}"
 
+    # Use installed pebble config (includes EAB key for testing)
+    PEBBLE_CONFIG="${PEBBLE_DIR}/pebble-config.json"
+
     echo "Starting pebble..."
     "${PEBBLE_BIN}" -config "${PEBBLE_CONFIG}" &
     PEBBLE_PID=$!

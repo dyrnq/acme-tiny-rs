@@ -311,6 +311,21 @@ run_test "dump TLS certificate chain" \
         exit \$RET
     "
 
+# ==== EAB (External Account Binding) ====
+
+run_test "Issue certificate with EAB" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account_ec.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --eab-kid \"pebble-eab\" \
+            --eab-hmac-key \"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\" \
+            > ${TMPDIR}/eab_signed.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/eab_signed.crt 'Pebble'
+    "
+
 # ==== Summary ====
 
 echo ""
