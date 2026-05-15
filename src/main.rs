@@ -131,6 +131,14 @@ struct Cli {
     #[arg(short = 'o', long = "output")]
     output: Option<String>,
 
+    /// TCP connect timeout in seconds (system default if unset)
+    #[arg(long = "connect-timeout")]
+    connect_timeout: Option<u64>,
+
+    /// Per-request timeout in seconds (system default if unset)
+    #[arg(long = "timeout")]
+    timeout: Option<u64>,
+
     // ---- Hooks (acme.sh compatible) ----
     /// Command or script to run before obtaining any certificates
     #[arg(long = "pre-hook")]
@@ -848,6 +856,9 @@ fn get_csr_der(path: &str) -> Result<Vec<u8>> {
 
 fn build_http_client(cli: &Cli) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder();
+
+    if let Some(t) = cli.connect_timeout { builder = builder.connect_timeout(Duration::from_secs(t)); }
+    if let Some(t) = cli.timeout { builder = builder.timeout(Duration::from_secs(t)); }
 
     if cli.insecure {
         builder = builder.danger_accept_invalid_certs(true);
