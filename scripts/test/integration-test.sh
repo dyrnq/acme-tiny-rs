@@ -254,6 +254,29 @@ run_test "ari subcommand --help" \
         ${BINARY} ari --help 2>/dev/null | grep -q 'cert'
     "
 
+# ==== TLS version compatibility ====
+
+run_test "TLS 1.3 inspect" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -sha256 -keyout ${TMPDIR}/tls13.key -out ${TMPDIR}/tls13.crt -days 1 -subj /CN=tls13 -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/tls13.crt -key ${TMPDIR}/tls13.key -port 5450 -tls1_3 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} inspect -d localhost:5450 -k 2>/dev/null | grep -q 'tls13'
+        kill \$PID 2>/dev/null
+    "
+
+run_test "TLS 1.3 dump" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -sha256 -keyout ${TMPDIR}/tls13d.key -out ${TMPDIR}/tls13d.crt -days 1 -subj /CN=tls13d -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/tls13d.crt -key ${TMPDIR}/tls13d.key -port 5451 -tls1_3 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        ${BINARY} dump localhost:5451 -k 2>/dev/null | grep -q 'CERTIFICATE'
+        kill \$PID 2>/dev/null
+    "
+
+
 run_test "inspect subcommand --help" \
     bash -c "
         ${BINARY} inspect --help 2>/dev/null | grep -q 'domain'
