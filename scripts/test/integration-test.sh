@@ -262,21 +262,35 @@ run_test "inspect subcommand --help" \
 run_test "inspect subcommand table output" \
     bash -c "
         openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/insp.key -out ${TMPDIR}/insp.crt -days 1 -subj /CN=inspect-test -nodes 2>/dev/null
-        openssl s_server -cert ${TMPDIR}/insp.crt -key ${TMPDIR}/insp.key -port 5443 -quiet 2>/dev/null &
+        openssl s_server -cert ${TMPDIR}/insp.crt -key ${TMPDIR}/insp.key -port 5443 -tls1_2 -www 2>/dev/null &
         PID=\$!
         sleep 1
-        ${BINARY} inspect -d localhost:5443 2>/dev/null | grep -q 'inspect-test'
+        ${BINARY} inspect -d localhost:5443 -k 2>/dev/null | grep -q 'inspect-test'
         kill \$PID 2>/dev/null
     "
 
 run_test "inspect subcommand JSON output" \
     bash -c "
         openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/insp2.key -out ${TMPDIR}/insp2.crt -days 1 -subj /CN=json-inspect -nodes 2>/dev/null
-        openssl s_server -cert ${TMPDIR}/insp2.crt -key ${TMPDIR}/insp2.key -port 5444 -quiet 2>/dev/null &
+        openssl s_server -cert ${TMPDIR}/insp2.crt -key ${TMPDIR}/insp2.key -port 5444 -tls1_2 -www 2>/dev/null &
         PID=\$!
         sleep 1
-        ${BINARY} inspect -d localhost:5444 --json 2>/dev/null | grep -q 'subject_cn'
+        ${BINARY} inspect -d localhost:5444 --json -k 2>/dev/null | grep -q 'subject_cn'
         kill \$PID 2>/dev/null
+    "
+
+run_test "inspect subcommand -k insecure flag" \
+    bash -c "
+        openssl req -x509 -newkey rsa:2048 -keyout ${TMPDIR}/insk.key -out ${TMPDIR}/insk.crt -days 1 -subj /CN=insecure-test -nodes 2>/dev/null
+        openssl s_server -cert ${TMPDIR}/insk.crt -key ${TMPDIR}/insk.key -port 5445 -tls1_2 -www 2>/dev/null &
+        PID=\$!
+        sleep 1
+        # Without -k should fail, with -k should succeed
+        ! ${BINARY} inspect -d localhost:5445 2>/dev/null | grep -q 'insecure-test' && \
+        ${BINARY} inspect -d localhost:5445 -k 2>/dev/null | grep -q 'insecure-test'
+        RET=\$?
+        kill \$PID 2>/dev/null
+        exit \$RET
     "
 
 run_test "revoke certificate via pebble" \
