@@ -187,6 +187,9 @@ enum Commands {
         /// Disable TLS certificate verification (testing only)
         #[arg(short = 'k', long = "insecure", hide = true)]
         insecure: bool,
+        /// Verbose diagnostic output to stderr (-v or -vv for more detail)
+        #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+        verbose: u8,
     },
     /// List all known ACME CA presets
     ListCa,
@@ -1349,12 +1352,12 @@ async fn main() -> Result<()> {
     if let Some(cmd) = cli.command {
         match cmd {
             Commands::Version => return commands::version::run(),
-            Commands::Ari { cert, directory_url, server, insecure } => {
+            Commands::Ari { cert, directory_url, server, insecure, verbose } => {
                 let dir_url = directory_url
                     .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_else(|| {
                         ca::KNOWN_CAS.iter().find(|c| c.id == "letsencrypt").unwrap().directory_url.to_string()
                     }));
-                return commands::ari::run(&cert, &dir_url, insecure).await;
+                return commands::ari::run(&cert, &dir_url, insecure, verbose).await;
             }
             Commands::ListCa => {
                 ca::print_ca_table();

@@ -254,6 +254,25 @@ run_test "ari subcommand --help" \
         ${BINARY} ari --help 2>/dev/null | grep -q 'cert'
     "
 
+# ARI renewalInfo via pebble (manual — verify suggestedWindow output)
+echo -n "  ari subcommand renewalInfo via pebble... "
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} \
+    > ${TMPDIR}/ari_cert.crt 2>/dev/null || { echo -e "${RED}FAILED${NC} (issue)"; FAILED=$((FAILED+1)); }
+if ${BINARY} ari --cert ${TMPDIR}/ari_cert.crt --directory-url ${DIRECTORY_URL} --insecure > ${TMPDIR}/ari_out.json 2> ${TMPDIR}/ari_err.log; then
+    SW=$(grep -o '"suggestedWindow":{[^}]*}' ${TMPDIR}/ari_out.json)
+    cat ${TMPDIR}/ari_out.json
+    echo -e "${GREEN}OK${NC} (${SW})"
+    PASSED=$((PASSED+1))
+else
+    echo -e "${RED}FAILED${NC}"
+    cat ${TMPDIR}/ari_err.log
+    FAILED=$((FAILED+1))
+fi
+
 # ==== TLS version compatibility ====
 
 run_test "TLS 1.3 inspect" \
