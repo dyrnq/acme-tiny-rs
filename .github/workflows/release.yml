@@ -140,6 +140,23 @@ jobs:
           sha256sum * > sha256sums.txt
           ls -la
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "${{ github.ref_name }}" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            echo "## What's Changed (${PREV_TAG} → ${{ github.ref_name }})" > /tmp/changelog.md
+            echo "" >> /tmp/changelog.md
+            git log --oneline "${PREV_TAG}..HEAD" | sed 's/^/- /' >> /tmp/changelog.md
+          else
+            echo "## Initial Release" > /tmp/changelog.md
+            echo "" >> /tmp/changelog.md
+            git log --oneline --max-count=30 | sed 's/^/- /' >> /tmp/changelog.md
+          fi
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/changelog.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -147,6 +164,8 @@ jobs:
             ## acme-tiny-rs ${{ github.ref_name }}
 
             Cross-platform static builds of acme-tiny-rs.
+
+            ${{ steps.changelog.outputs.changelog }}
 
             ### Assets
             - **x86_64-unknown-linux-gnu** — Linux x86_64 (glibc)
