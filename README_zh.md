@@ -27,6 +27,8 @@ Rust 重写 [acme-tiny](https://github.com/diafygi/acme-tiny)，兼容全部 CLI
 - **Hooks**：兼容 acme.sh 的 pre/post/renew/deploy/notify 钩子
 - **子命令**：`revoke`、`inspect`、`dump`、`ari`、`version`
 - **DNS CNAME 委托**：自动跟随 `_acme-challenge` CNAME 链（无需手动指定 `--challenge-alias`）
+- **ARI 续期（RFC 9773）**：`--ari` + `--cert` 实现 CA 调度的智能续期；`ari` 子命令用于手动检查
+- **ACME Profiles**：`-P`/`--profile` 选择证书类型（classic、shortlived、tlsserver）
 - **静态链接**：`x86_64-unknown-linux-musl` 构建不依赖任何 `.so`，可在任意 Linux 内核上运行
 
 ## 安装
@@ -213,9 +215,11 @@ service nginx reload
   revoke --cert <PATH>      吊销证书（RFC 8555 §7.6）
   inspect -d <DOMAIN>       检查 TLS 证书信息（表格或 --json）
   dump <DOMAIN>             导出 TLS 证书链
-```
+  list-ca                   列出已知 CA 预设（--json、--no-header）
+  inspect-ca --server <ID>  获取并格式化 CA 目录 JSON
+  thumbprint --account-key  输出 JWK 指纹（RFC 7638）
 
-详情见 [DNS.md](DNS.md) 了解全部 DNS 提供商，[EAB.md](EAB.md) 了解外部账户绑定。
+详情见 [ARI.md](ARI.md) 了解 ARI 续期、[DNS.md](DNS.md) 了解 DNS 提供商、[EAB.md](EAB.md) 了解外部账户绑定。
 
 ## License
 

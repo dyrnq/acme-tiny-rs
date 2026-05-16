@@ -30,6 +30,8 @@ A Rust port of [acme-tiny](https://github.com/diafygi/acme-tiny), fully compatib
 - **Hooks**: acme.sh-compatible pre/post/renew/deploy/notify hooks
 - **Subcommands**: `revoke`, `inspect`, `dump`, `ari`, `version`
 - **DNS CNAME delegation**: Auto-follow `_acme-challenge` CNAME chain (no manual `--challenge-alias` needed)
+- **ARI renewal (RFC 9773)**: `--ari` with `--cert` for CA-scheduled renewal; `ari` subcommand for manual inspection
+- **ACMEE Profiles**: Pass `-P`/`--profile` to select certificate profile (classic, shortlived, tlsserver)
 - **Statically linked**: `x86_64-unknown-linux-musl` builds have zero `.so` dependencies — runs on any Linux kernel
 - **Drop-in compatible**: CLI arguments match `acme-tiny` exactly
 
@@ -217,9 +219,11 @@ Subcommands:
   revoke --cert <PATH>      Revoke a certificate (RFC 8555 §7.6)
   inspect -d <DOMAIN>       TLS certificate info (table or --json)
   dump <DOMAIN>             Dump TLS certificate chain
-```
+  list-ca                   List known CA presets (--json, --no-header)
+  inspect-ca --server <ID>  Fetch and pretty-print CA directory JSON
+  thumbprint --account-key  Output JWK thumbprint (RFC 7638)
 
-See also: [DNS.md](DNS.md), [EAB.md](EAB.md) (External Account Binding).
+See also: [ARI.md](ARI.md) (ARI renewal), [DNS.md](DNS.md), [EAB.md](EAB.md).
 
 ## License
 
