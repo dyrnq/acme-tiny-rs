@@ -68,7 +68,7 @@ struct Cli {
     /// ACME CA server — preset name or full URL (default: letsencrypt)
     ///
     /// Preset names: letsencrypt, letsencrypt-staging, zerossl,
-    ///               buypass, sslcom, google, step, pebble, pebble-eab
+    ///               sslcom, google, step, pebble, pebble-eab
     ///
     /// Or provide a full URL: https://my-ca.example.com/directory
     #[arg(long = "server", default_value = DEFAULT_SERVER)]
@@ -118,6 +118,10 @@ struct Cli {
     /// EAB HMAC Key (base64url-encoded, for External Account Binding)
     #[arg(long = "eab-hmac-key")]
     eab_hmac_key: Option<String>,
+
+    /// HMAC algorithm for EAB (HS256, HS384, HS512) [default: HS256]
+    #[arg(long = "eab-hmac-alg", default_value = "HS256")]
+    eab_hmac_alg: String,
 
     /// Agree to the CA's Terms of Service [default: true]
     #[arg(long = "agree-tos", default_value_t = true)]
@@ -1007,7 +1011,7 @@ async fn get_crt(
     let eab = if let (Some(ref kid), Some(ref hmac_key)) = (&cli.eab_kid, &cli.eab_hmac_key) {
         let jwk_json = serde_json::to_string(signing_key.jwk())?;
         let eab_protected = serde_json::json!({
-            "alg": "HS256",
+            "alg": cli.eab_hmac_alg,
             "kid": kid,
             "url": directory.new_account,
         });
@@ -1018,11 +1022,27 @@ async fn get_crt(
         let decoded_key = URL_SAFE_NO_PAD.decode(hmac_key.as_bytes())
             .context("EAB HMAC key is not valid base64url")?;
         use hmac::{Hmac, Mac};
-        use sha2::Sha256;
-        let mut mac = Hmac::<Sha256>::new_from_slice(&decoded_key)
-            .context("EAB HMAC key invalid")?;
-        mac.update(signing_input.as_bytes());
-        let sig = mac.finalize().into_bytes();
+        let sig: Vec<u8> = match cli.eab_hmac_alg.as_str() {
+            "HS256" => {
+                let mut mac = Hmac::<sha2::Sha256>::new_from_slice(&decoded_key)
+                    .context("EAB HMAC key invalid")?;
+                mac.update(signing_input.as_bytes());
+                mac.finalize().into_bytes().to_vec()
+            }
+            "HS384" => {
+                let mut mac = Hmac::<sha2::Sha384>::new_from_slice(&decoded_key)
+                    .context("EAB HMAC key invalid")?;
+                mac.update(signing_input.as_bytes());
+                mac.finalize().into_bytes().to_vec()
+            }
+            "HS512" => {
+                let mut mac = Hmac::<sha2::Sha512>::new_from_slice(&decoded_key)
+                    .context("EAB HMAC key invalid")?;
+                mac.update(signing_input.as_bytes());
+                mac.finalize().into_bytes().to_vec()
+            }
+            other => bail!("Unsupported EAB HMAC algorithm: {other} (use HS256, HS384, or HS512)"),
+        };
 
         Some(serde_json::json!({
             "protected": protected64,
