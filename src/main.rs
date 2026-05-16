@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueHint};
 use log::{info, LevelFilter};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs8::DecodePrivateKey;
@@ -46,11 +46,11 @@ mod ca;
 )]
 struct Cli {
     /// Path to your Let's Encrypt account private key
-    #[arg(long = "account-key")]
+    #[arg(long = "account-key", value_hint = ValueHint::FilePath)]
     account_key: Option<String>,
 
     /// Path to your certificate signing request (CSR)
-    #[arg(long = "csr")]
+    #[arg(long = "csr", value_hint = ValueHint::FilePath)]
     csr: Option<String>,
 
     /// Path to the .well-known/acme-challenge/ directory
@@ -116,7 +116,7 @@ struct Cli {
     eab_kid: Option<String>,
 
     /// EAB HMAC Key (base64url-encoded, for External Account Binding)
-    #[arg(long = "eab-hmac-key")]
+    #[arg(long = "eab-hmac-key", value_hint = ValueHint::FilePath)]
     eab_hmac_key: Option<String>,
 
     /// HMAC algorithm for EAB (HS256, HS384, HS512) [default: HS256]
@@ -140,7 +140,7 @@ struct Cli {
     ari: bool,
 
     /// Path to existing certificate for ARI check and replaces field
-    #[arg(long = "existing-cert", visible_alias = "cert")]
+    #[arg(long = "existing-cert", visible_alias = "cert", value_hint = ValueHint::FilePath)]
     existing_cert: Option<String>,
 
     /// Write certificate to file instead of stdout
@@ -177,7 +177,7 @@ struct Cli {
     notify_hook: Option<String>,
 
     /// Path to additional CA certificate bundle for TLS verification
-    #[arg(long = "ca-bundle")]
+    #[arg(long = "ca-bundle", value_hint = ValueHint::FilePath)]
     ca_bundle: Option<String>,
 
     /// Disable TLS certificate verification (testing only)
@@ -225,7 +225,7 @@ enum AccountAction {
         #[arg(long = "eab-kid")]
         eab_kid: Option<String>,
         /// EAB HMAC Key (base64url-encoded)
-        #[arg(long = "eab-hmac-key")]
+        #[arg(long = "eab-hmac-key", value_hint = ValueHint::FilePath)]
         eab_hmac_key: Option<String>,
         /// HMAC algorithm for EAB (HS256, HS384, HS512)
         #[arg(long = "eab-hmac-alg", default_value = "HS256")]
@@ -236,7 +236,7 @@ enum AccountAction {
     /// Change account key (RFC 8555 §7.3.5 key rollover)
     ChangeKey {
         /// Path to the new account private key
-        #[arg(long = "new-key")]
+        #[arg(long = "new-key", value_hint = ValueHint::FilePath)]
         new_key: String,
     },
 }
@@ -359,6 +359,12 @@ enum Commands {
         insecure: bool,
         #[command(subcommand)]
         action: AccountAction,
+    },
+    /// Generate shell completion script (bash, zsh, fish)
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_name = "SHELL")]
+        shell: String,
     },
     /// Output JWK thumbprint (RFC 7638) for stateless HTTP-01 / dns-account-01
     Thumbprint {
@@ -1596,6 +1602,20 @@ async fn main() -> Result<()> {
                     AccountAction::Unregister => commands::account::unregister(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose).await,
                     AccountAction::ChangeKey { new_key } => commands::account::change_key(&sk, &dir, &new_key, acct_cb.as_deref(), acct_ins, verbose).await,
                 };
+            }
+            Commands::Completions { shell } => {
+                use clap::CommandFactory;
+                use clap_complete::{generate, Shell};
+                let sh = match shell.as_str() {
+                    "bash" => Shell::Bash,
+                    "zsh" => Shell::Zsh,
+                    "fish" => Shell::Fish,
+                    "powershell" => Shell::PowerShell,
+                    _ => bail!("Unsupported shell: {shell}. Use bash, zsh, fish, or powershell."),
+                };
+                let mut cmd = Cli::command();
+                generate(sh, &mut cmd, "acme-tiny-rs", &mut std::io::stdout());
+                return Ok(());
             }
             Commands::Thumbprint { account_key } => return commands::thumbprint::run(&account_key),
             Commands::Version => return commands::version::run(),
