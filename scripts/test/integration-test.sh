@@ -580,7 +580,74 @@ run_test "Issue certificate with EAB" \
         cert_ok ${TMPDIR}/eab_signed.crt 'Pebble'
     "
 
+run_test "EAB re-registration (same account, same EAB)" \
+    bash -c "
+        # Re-register the same account key with the same EAB credentials
+        # Should succeed — ACME returns 200 for existing account
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account_ec.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --eab-kid \"pebble-eab\" \
+            --eab-hmac-key \"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\" \
+            > ${TMPDIR}/eab_reissued.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/eab_reissued.crt 'Pebble'
+    "
+
 # ==== Summary ====
+
+# ==== Account subcommand ====
+
+run_test "account register (new)" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account.key \
+            account register --server pebble -k -m test@example.com 2>/dev/null | grep -q 'Account URL'
+    "
+
+run_test "account show" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account.key \
+            account show --server pebble -k 2>/dev/null | grep -q 'status'
+    "
+
+run_test "account update (add contact)" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account.key \
+            account update --server pebble -k -m updated@example.com 2>/dev/null | grep -q 'contact'
+    "
+
+run_test "account unregister" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account.key \
+            account unregister --server pebble -k 2>/dev/null | grep -q 'deactivated'
+    "
+
+run_test "account re-register after unregister" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account_ec.key \
+            account register --server pebble -k -vvv 2>&1 | grep -q 'Account URL'
+    "
+
+run_test "account -v verbose output" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account.key \
+            account show --server pebble -k -v 2>&1 | grep -q '\[account\]'
+    "
+
+run_test "account -v verbose output" \
+    bash -c "
+        ${BINARY} --account-key ${KEYS_DIR}/account_ec.key \
+            account show --server pebble -k -v 2>&1 | grep -q '\[account\]'
+    "
+
+run_test "account change-key (key rollover)" \
+    bash -c "
+        OUT=\$(${BINARY} --account-key ${KEYS_DIR}/account.key \
+            account change-key --new-key ${KEYS_DIR}/account_ec.key \
+            --server pebble -k -vvv 2>&1)
+        echo \"\$OUT\" | grep -q 'status' || { echo \"CHANGE-KEY FAILED:\"; echo \"\$OUT\"; exit 1; }
+    "
 
 echo ""
 echo "--- Results ---"
