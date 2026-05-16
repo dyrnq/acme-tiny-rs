@@ -11,20 +11,32 @@ const OID_AKI: &str = "2.5.29.35";
 
 /// Strip DER wrappers from AKI extension value to get raw key hash.
 fn extract_aki_key_hash(value: &[u8]) -> Option<&[u8]> {
-    // ext.value = SEQUENCE([0] IMPLICIT OCTET STRING{key_hash})
-    let off = if value.first() == Some(&0x30) { 2 } else { return None; }; // SEQUENCE
+    let off = if value.first() == Some(&0x30) { 2 } else { return None; };
     if off >= value.len() { return None; }
-    if value.get(off) != Some(&0x80) { return None; } // [0] IMPLICIT
+    if value.get(off) != Some(&0x80) { return None; }
     let len = *value.get(off + 1)? as usize;
     value.get(off + 2 .. off + 2 + len)
 }
 
-/// Query the ACME renewalInfo endpoint and output JSON to stdout.
-pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: u8) -> Result<()> {
-    if verbose >= 1 {
-        eprintln!("[ari] Reading certificate from {cert_path}");
-    }
-    let cert_pem = if cert_path == "-" {
+/// Compute certID (base64url(AKI).base64url(serial)) from PEM bytes.
+pub fn cert_id_from_pem(pem_data: &[u8]) -> Result<String> {
+    let (_, pem) = x509_parser::pem::pem_to_der(pem_data)
+        .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
+    let (_, cert) = x509_parser::parse_x509_certificate(&pem.contents)
+        .context("Failed to parse certificate")?;
+    let aki = cert.extensions()
+        .iter()
+        .find(|ext| ext.oid.to_string() == OID_AKI)
+        .and_then(|ext| extract_aki_key_hash(ext.value.as_ref()).map(|s| s.to_vec()))
+        .ok_or_else(|| anyhow!("No Authority Key Identifier in certificate"))?;
+    let serial = cert.raw_serial().to_vec();
+    let b64 = |d: &[u8]| URL_SAFE_NO_PAD.encode(d);
+    Ok(format!("{}.{}", b64(&aki), b64(&serial)))
+}
+
+/// Compute certID from a PEM file path (or "-" for stdin).
+pub fn cert_id_from_file(cert_path: &str) -> Result<String> {
+    let bytes = if cert_path == "-" {
         let mut buf = Vec::new();
         std::io::stdin().read_to_end(&mut buf)
             .with_context(|| "Failed to read certificate from stdin")?;
@@ -33,28 +45,15 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
         std::fs::read(cert_path)
             .with_context(|| format!("Failed to read {cert_path}"))?
     };
-    let (_, pem) = x509_parser::pem::pem_to_der(&cert_pem)
-        .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
-    let (_, cert) = x509_parser::parse_x509_certificate(&pem.contents)
-        .context("Failed to parse certificate")?;
+    cert_id_from_pem(&bytes)
+}
 
-    // Extract AKI key hash from extension value.
-    let aki = cert.extensions()
-        .iter()
-        .find(|ext| ext.oid.to_string() == OID_AKI)
-        .and_then(|ext| extract_aki_key_hash(ext.value.as_ref()).map(|s| s.to_vec()))
-        .ok_or_else(|| anyhow!(r#"{{"renew":false,"reason":"no aki"}}"#))?;
-
-    let serial = cert.raw_serial().to_vec();
-
-    if verbose >= 2 {
-        eprintln!("[ari] AKI: {} bytes", aki.len());
-        eprintln!("[ari] Serial: {} bytes", serial.len());
+/// Query the ACME renewalInfo endpoint and output JSON to stdout.
+pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: u8) -> Result<()> {
+    if verbose >= 1 {
+        eprintln!("[ari] Reading certificate from {cert_path}");
     }
-
-    let b64 = |d: &[u8]| URL_SAFE_NO_PAD.encode(d);
-    let cert_id = format!("{}.{}", b64(&aki), b64(&serial));
-
+    let cert_id = cert_id_from_file(cert_path)?;
     if verbose >= 1 {
         eprintln!("[ari] certID = {cert_id}");
     }
@@ -68,7 +67,6 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     if verbose >= 1 {
         eprintln!("[ari] GET {directory_url}");
     }
-
     let directory: serde_json::Value = client
         .get(directory_url)
         .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
@@ -77,7 +75,6 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
 
     let renewal_url = directory["renewalInfo"].as_str()
         .ok_or_else(|| anyhow!(r#"{{"renew":false,"reason":"no ari endpoint"}}"#))?;
-
     if verbose >= 1 {
         eprintln!("[ari] renewalInfo endpoint: {renewal_url}");
     }
@@ -98,12 +95,10 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     if verbose >= 2 {
         eprintln!("[ari] GET {url}");
     }
-
     let resp = client
         .get(&url)
         .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
         .send().await.context("Failed to query ARI endpoint")?;
-
     if verbose >= 1 {
         eprintln!("[ari] Response: HTTP {}", resp.status());
     }
@@ -112,7 +107,6 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
         println!(r#"{{"renew":false,"reason":"no suggestion"}}"#);
         return Ok(());
     }
-
     if !resp.status().is_success() {
         bail!("ARI query failed: HTTP {}", resp.status());
     }

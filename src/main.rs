@@ -127,6 +127,18 @@ struct Cli {
     #[arg(short = 'P', long = "profile")]
     profile: Option<String>,
 
+    /// Force issuance (skip ARI check). Default true for backward compatibility.
+    #[arg(long = "force", default_value_t = true)]
+    force: bool,
+
+    /// Check ARI renewal window before issuing (requires --existing-cert)
+    #[arg(long = "ari")]
+    ari: bool,
+
+    /// Path to existing certificate for ARI check and replaces field
+    #[arg(long = "existing-cert", long = "cert")]
+    existing_cert: Option<String>,
+
     /// Write certificate to file instead of stdout
     #[arg(short = 'o', long = "output")]
     output: Option<String>,
@@ -310,6 +322,8 @@ pub(crate) struct Directory {
     pub(crate) new_account: String,
     #[serde(rename = "newOrder")]
     pub(crate) new_order: String,
+    #[serde(rename = "renewalInfo")]
+    pub(crate) renewal_info: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -917,6 +931,72 @@ async fn get_crt(
     }
     let directory: Directory =
         serde_json::from_value(dir_json).context("Failed to parse directory response")?;
+
+    // --- ARI pre-check (RFC 9773) ---
+    let cert_id_for_replaces = if cli.ari && cli.existing_cert.is_some() {
+        let cert_path = cli.existing_cert.as_ref().unwrap();
+        let aki_serial = crate::commands::ari::cert_id_from_file(cert_path)?;
+        let renewal_url = directory.renewal_info.as_deref()
+            .unwrap_or("/renewalInfo"); // fallback, unlikely for ARI-enabled CAs
+        let url = if renewal_url.starts_with("http") {
+            format!("{renewal_url}/{aki_serial}")
+        } else {
+            let dir_url = reqwest::Url::parse(&dir_url)
+                .context("Invalid directory URL")?;
+            format!("{}://{}{}/{}/{}",
+                dir_url.scheme(),
+                dir_url.host_str().unwrap_or(""),
+                if let Some(port) = dir_url.port() { format!(":{port}") } else { String::new() },
+                renewal_url.trim_matches('/'),
+                aki_serial)
+        };
+        let resp = client.get(&url)
+            .header("User-Agent", USER_AGENT)
+            .send().await.context("Failed to query ARI endpoint")?;
+        if resp.status() == 200 {
+            let ari_info: serde_json::Value = resp.json().await?;
+            let start = ari_info["suggestedWindow"]["start"].as_str();
+            let end = ari_info["suggestedWindow"]["end"].as_str();
+            // Simple check: if server returned 200 with a window, trust it
+            if start.is_some() && end.is_some() {
+                // Parse RFC3339: "2026-07-15T06:53:25Z"
+                let now_secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+                let parse_rfc3339 = |ts: &str| -> i64 {
+                    ts.trim_end_matches('Z').replace('T', " ")
+                        .split(' ').next().map(|d| {
+                            let p: Vec<&str> = d.split('-').collect();
+                            if p.len() == 3 {
+                                let y: i64 = p[0].parse().unwrap_or(1970);
+                                let m: u32 = p[1].parse().unwrap_or(1);
+                                let d: u32 = p[2].parse().unwrap_or(1);
+                                ((y - 1970) * 365 + m as i64 * 30 + d as i64) * 86400
+                            } else { 0 }
+                        }).unwrap_or(0)
+                };
+                let w_start = start.map(parse_rfc3339).unwrap_or(0);
+                let w_end = end.map(parse_rfc3339).unwrap_or(0);
+                if now_secs < w_start || now_secs > w_end {
+                    info!("ARI: not in renewal window. Skipping issuance.");
+                    return Ok(String::new());
+                }
+                info!("ARI: in renewal window. Proceeding.");
+            }
+        } else if resp.status() == 404 {
+            info!("ARI: no suggestion from server. Proceeding.");
+        }
+        Some(aki_serial)
+    } else if cli.ari {
+        info!("ARI: --ari set but no --existing-cert, skipping ARI check");
+        None
+    } else if cli.existing_cert.is_some() {
+        // --existing-cert without --ari: compute certID for replaces field
+        let cert_path = cli.existing_cert.as_ref().unwrap();
+        let aki_serial = crate::commands::ari::cert_id_from_file(cert_path)?;
+        Some(aki_serial)
+    } else {
+        None
+    };
     info!("Directory found!");
 
     // Register account
@@ -1031,6 +1111,9 @@ async fn get_crt(
     let mut order_payload = serde_json::json!({"identifiers": identifiers});
     if let Some(ref p) = cli.profile {
         order_payload["profile"] = serde_json::json!(p);
+    }
+    if let Some(ref cert_id) = cert_id_for_replaces {
+        order_payload["replaces"] = serde_json::json!(cert_id);
     }
 
     let (order, _, headers) = send_signed_request(
@@ -1485,8 +1568,12 @@ async fn main() -> Result<()> {
     let certificate = result?;
 
     if let Some(ref path) = cli.output {
-        std::fs::write(path, &certificate)
-            .with_context(|| format!("Failed to write certificate to {path}"))?;
+        // Atomic write: write to temp file first, then rename
+        let tmp = format!("{path}.tmp-{}", std::process::id());
+        std::fs::write(&tmp, &certificate)
+            .with_context(|| format!("Failed to write certificate to {tmp}"))?;
+        std::fs::rename(&tmp, path)
+            .with_context(|| format!("Failed to rename {tmp} to {path}"))?;
         info!("Certificate written to {path}");
     } else {
         print!("{certificate}");
