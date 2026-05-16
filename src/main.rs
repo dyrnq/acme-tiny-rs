@@ -204,6 +204,44 @@ fn resolve_directory_url(cli: &Cli) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 #[derive(Subcommand)]
+enum AccountAction {
+    /// Display account details
+    Show,
+    /// Update account contact information
+    Update {
+        /// Email address(es) for account notifications
+        #[arg(short = 'm')]
+        email: Option<Vec<String>>,
+    },
+    /// Register a new ACME account
+    Register {
+        /// Email address(es) for account notifications
+        #[arg(short = 'm')]
+        email: Option<Vec<String>>,
+        /// Agree to the CA's Terms of Service
+        #[arg(long = "agree-tos", default_value_t = true)]
+        agree_tos: bool,
+        /// EAB Key Identifier (for External Account Binding)
+        #[arg(long = "eab-kid")]
+        eab_kid: Option<String>,
+        /// EAB HMAC Key (base64url-encoded)
+        #[arg(long = "eab-hmac-key")]
+        eab_hmac_key: Option<String>,
+        /// HMAC algorithm for EAB (HS256, HS384, HS512)
+        #[arg(long = "eab-hmac-alg", default_value = "HS256")]
+        eab_hmac_alg: String,
+    },
+    /// Deactivate (unregister) an ACME account
+    Unregister,
+    /// Change account key (RFC 8555 §7.3.5 key rollover)
+    ChangeKey {
+        /// Path to the new account private key
+        #[arg(long = "new-key")]
+        new_key: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum Commands {
     /// ARI renewal info check for a certificate
     Ari {
@@ -304,6 +342,24 @@ enum Commands {
         #[arg(short = 'k', long = "insecure", hide = true)]
         insecure: bool,
     },
+    /// Manage ACME account (show, update, register, unregister)
+    #[command(alias = "a")]
+    Account {
+        /// Verbose output (-v, -vv, -vvv)
+        #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count, global = true)]
+        verbose: u8,
+        /// ACME server preset name or URL
+        #[arg(long = "server", default_value = DEFAULT_SERVER, global = true)]
+        server: String,
+        /// ACME directory URL (overrides --server)
+        #[arg(long = "directory-url", global = true)]
+        directory_url: Option<String>,
+        /// Disable TLS certificate verification (testing only)
+        #[arg(short = 'k', long = "insecure", hide = true, global = true)]
+        insecure: bool,
+        #[command(subcommand)]
+        action: AccountAction,
+    },
     /// Output JWK thumbprint (RFC 7638) for stateless HTTP-01 / dns-account-01
     Thumbprint {
         /// Path to the ACME account private key
@@ -328,6 +384,8 @@ pub(crate) struct Directory {
     pub(crate) new_order: String,
     #[serde(rename = "renewalInfo")]
     pub(crate) renewal_info: Option<String>,
+    #[serde(rename = "keyChange")]
+    pub(crate) key_change: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -465,6 +523,13 @@ pub(crate) async fn do_request(
 // ---------------------------------------------------------------------------
 // Signed request helper (JWS with RS256)
 // ---------------------------------------------------------------------------
+
+pub(crate) async fn get_nonce(client: &reqwest::Client, directory: &Directory) -> Result<String> {
+    let (_, _, headers) = do_request(client, &directory.new_nonce, None, "nonce").await?;
+    Ok(headers.get("Replay-Nonce")
+        .ok_or_else(|| anyhow!("Missing Replay-Nonce header"))?
+        .to_str()?.to_string())
+}
 
 pub(crate) async fn send_signed_request(
     client: &reqwest::Client,
@@ -1504,9 +1569,34 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Extract fields needed before cli.command is consumed
+    let acct_key = cli.account_key.clone();
+    let acct_cb = cli.ca_bundle.clone();
+    let acct_ins = cli.insecure;
+    let acct_dir = resolve_directory_url(&cli).unwrap_or_default();
+
     // Dispatch subcommand
     if let Some(cmd) = cli.command {
         match cmd {
+            Commands::Account { action, verbose, server, directory_url, .. } => {
+                let key = acct_key.as_deref()
+                    .ok_or_else(|| anyhow!("--account-key is required for account commands"))?;
+                let sk = parse_account_key(key)?;
+                let dir = directory_url
+                    .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_default());
+                if verbose >= 1 { eprintln!("[account] Server: {dir}"); }
+                return match action {
+                    AccountAction::Show => commands::account::show(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose).await,
+                    AccountAction::Update { email } => commands::account::update(&sk, &dir, email.as_deref(), acct_cb.as_deref(), acct_ins, verbose).await,
+                    AccountAction::Register { email, agree_tos, eab_kid, eab_hmac_key, eab_hmac_alg } => commands::account::register(
+                        &sk, &dir, email.as_deref(), agree_tos,
+                        eab_kid.as_deref(), eab_hmac_key.as_deref(), &eab_hmac_alg,
+                        acct_cb.as_deref(), acct_ins, verbose,
+                    ).await,
+                    AccountAction::Unregister => commands::account::unregister(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose).await,
+                    AccountAction::ChangeKey { new_key } => commands::account::change_key(&sk, &dir, &new_key, acct_cb.as_deref(), acct_ins, verbose).await,
+                };
+            }
             Commands::Thumbprint { account_key } => return commands::thumbprint::run(&account_key),
             Commands::Version => return commands::version::run(),
             Commands::Ari { cert, directory_url, server, insecure, verbose } => {

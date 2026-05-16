@@ -65,6 +65,7 @@ pub async fn run(
         new_order: directory["newOrder"].as_str()
             .ok_or_else(|| anyhow!("Missing newOrder in directory"))?.to_string(),
         renewal_info: directory["renewalInfo"].as_str().map(|s| s.to_string()),
+        key_change: directory["keyChange"].as_str().map(|s| s.to_string()),
     };
 
     // 5. Resolve account location (KID) by re-registering —
