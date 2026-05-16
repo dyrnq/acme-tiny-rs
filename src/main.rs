@@ -119,6 +119,10 @@ struct Cli {
     #[arg(long = "dns-provider", default_value = "manual")]
     dns_provider: String,
 
+    /// Per-domain DNS challenge alias (target domain for CNAME delegation)
+    #[arg(long = "challenge-alias")]
+    challenge_alias: Option<String>,
+
     /// EAB Key Identifier (for External Account Binding)
     #[arg(long = "eab-kid")]
     eab_kid: Option<String>,
@@ -1301,10 +1305,20 @@ async fn get_crt(
             } else {
                 dns::dns_txt_value(&cleaned_token, &thumbprint)
             };
-            let effective_domain = dns::cname::resolve_challenge_domain(&domain).await;
+            let effective_domain = if let Some(ref alias) = cli.challenge_alias {
+                if alias.starts_with('=') {
+                    // =alias.com → TXT at alias.com (no _acme-challenge. prefix)
+                    alias.trim_start_matches('=').to_string()
+                } else {
+                    // alias.com → TXT at _acme-challenge.alias.com
+                    format!("_acme-challenge.{alias}")
+                }
+            } else {
+                dns::cname::resolve_challenge_domain(&domain).await.trim_end_matches('.').to_string()
+            };
             if effective_domain != domain {
                 log::info!(
-                    "DNS challenge delegated from {} -> {} (CNAME auto-follow)",
+                    "DNS challenge delegated from {} -> {}",
                     domain, effective_domain
                 );
             }
