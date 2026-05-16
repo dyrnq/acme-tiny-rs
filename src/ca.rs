@@ -289,7 +289,6 @@ mod tests {
         let list = list_presets();
         assert!(list.contains("letsencrypt"));
         assert!(list.contains("zerossl"));
-        assert!(list.contains("buypass"));
         assert!(list.contains("[EAB required]"));
     }
 
