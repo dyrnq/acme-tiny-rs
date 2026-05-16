@@ -347,6 +347,80 @@ run_test "issue cert with unsupported -P fails" \
             > /dev/null 2>&1
     "
 
+# ==== ARI / --cert / --force renewal tests ====
+
+# Issue a reference cert for subsequent tests
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} \
+    > ${TMPDIR}/ref.crt 2>/dev/null || { echo "FATAL: cannot issue ref cert"; exit 1; }
+
+run_test "issue cert with --cert (replaces, no ARI check)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/ref.crt \
+            > ${TMPDIR}/replaces.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/replaces.crt 'Pebble'
+    "
+
+run_test "--ari + --cert: skips when not in window" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --ari --cert ${TMPDIR}/ref.crt \
+            > ${TMPDIR}/ari_skip.crt 2>/dev/null
+        # Should exit with empty output (ARI window is ~60 days out)
+        [ ! -s ${TMPDIR}/ari_skip.crt ]
+    "
+
+run_test "--ari + --cert + --force: still honors ARI skip" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --ari --cert ${TMPDIR}/ref.crt --force \
+            > ${TMPDIR}/ari_force.crt 2>/dev/null
+        [ ! -s ${TMPDIR}/ari_force.crt ]
+    "
+
+run_test "--output atomic: no .tmp residue" \
+    bash -c "
+        rm -f ${TMPDIR}/atomic.crt ${TMPDIR}/atomic.crt.tmp-*
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --output ${TMPDIR}/atomic.crt \
+            > /dev/null 2>&1 && \
+        cert_ok ${TMPDIR}/atomic.crt 'Pebble' && \
+        ls ${TMPDIR}/atomic.crt.tmp-* 2>/dev/null && exit 1 || true
+    "
+
+run_test "--output overwrites --cert path atomically" \
+    bash -c "
+        cp ${TMPDIR}/ref.crt ${TMPDIR}/overwrite.crt
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --output ${TMPDIR}/overwrite.crt \
+            > /dev/null 2>&1 && \
+        cert_ok ${TMPDIR}/overwrite.crt 'Pebble'
+    "
+
 # ==== TLS version compatibility ====
 
 run_test "TLS 1.3 inspect" \
