@@ -222,6 +222,7 @@ Subcommands:
   list-ca                   List known CA presets (--json, --no-header)
   inspect-ca --server <ID>  Fetch and pretty-print CA directory JSON
   thumbprint --account-key  Output JWK thumbprint (RFC 7638)
+```
 
 See also: [ARI.md](ARI.md) (ARI renewal), [DNS.md](DNS.md), [EAB.md](EAB.md).
 

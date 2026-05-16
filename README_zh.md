@@ -218,6 +218,7 @@ service nginx reload
   list-ca                   列出已知 CA 预设（--json、--no-header）
   inspect-ca --server <ID>  获取并格式化 CA 目录 JSON
   thumbprint --account-key  输出 JWK 指纹（RFC 7638）
+```
 
 详情见 [ARI.md](ARI.md) 了解 ARI 续期、[DNS.md](DNS.md) 了解 DNS 提供商、[EAB.md](EAB.md) 了解外部账户绑定。
 
