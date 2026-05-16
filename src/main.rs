@@ -140,7 +140,7 @@ struct Cli {
     ari: bool,
 
     /// Path to existing certificate for ARI check and replaces field
-    #[arg(long = "existing-cert", long = "cert")]
+    #[arg(long = "existing-cert", visible_alias = "cert")]
     existing_cert: Option<String>,
 
     /// Write certificate to file instead of stdout
