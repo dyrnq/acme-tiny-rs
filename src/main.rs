@@ -1567,6 +1567,11 @@ async fn main() -> Result<()> {
     }
     let certificate = result?;
 
+    // ARI skip: empty certificate means no issuance needed
+    if certificate.is_empty() {
+        return Ok(());
+    }
+
     if let Some(ref path) = cli.output {
         // Atomic write: write to temp file first, then rename
         let tmp = format!("{path}.tmp-{}", std::process::id());
