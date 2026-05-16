@@ -178,4 +178,4 @@ All tools respect the standard proxy environment variables:
 | Cron              | auto-installs systemd timer / cron               | `--cron` subcommand (pre-scheduled)                 | user manages cron (one-liner)                                      |
 | Key generation    | `--key-type rsa\|ecdsa`                          | `--keylength ec-256` account/domain                 | `openssl ecparam -genkey` (wrapper)                                |
 | CSR creation      | auto-generates                                  | auto-generates from `-d`                            | user provides CSR                                                  |
-| CA discovery      | compiled-in LE + staging                        | compiled-in LE + ZeroSSL + Buypass                  | `list-ca` (7 presets), `inspect-ca` (dynamic)                      |
+| CA discovery      | compiled-in LE + staging                        | compiled-in LE + ZeroSSL + Buypass                  | `list-ca` (12 presets), `inspect-ca` (dynamic)                     |

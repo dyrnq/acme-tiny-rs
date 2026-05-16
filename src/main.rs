@@ -68,7 +68,7 @@ struct Cli {
     /// ACME CA server — preset name or full URL (default: letsencrypt)
     ///
     /// Preset names: letsencrypt, letsencrypt-staging, zerossl,
-    ///               sslcom, google, step, pebble, pebble-eab
+    ///               sslcom, sslcom-ecc, google, googletest, actalis, step, pebble, pebble-eab
     ///
     /// Or provide a full URL: https://my-ca.example.com/directory
     #[arg(long = "server", default_value = DEFAULT_SERVER)]
