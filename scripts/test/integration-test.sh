@@ -347,6 +347,72 @@ run_test "issue cert with unsupported -P fails" \
             > /dev/null 2>&1
     "
 
+# ==== Standalone custom port (socat forward) ====
+
+run_test "standalone HTTP on --http-01-port 8080 + socat 80→8080" \
+    bash -c "
+        socat TCP-LISTEN:80,reuseaddr,fork TCP:localhost:8080 &
+        SOCAT_PID=\$!
+        sleep 0.5
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} --standalone --http-01-port 8080 \
+            > ${TMPDIR}/standalone_custom.crt 2>/dev/null
+        RC=\$?
+        kill \$SOCAT_PID 2>/dev/null
+        [ \$RC -eq 0 ] && cert_ok ${TMPDIR}/standalone_custom.crt 'Pebble'
+    "
+
+run_test "standalone HTTP on --httpport 8080 (acme.sh alias) + socat 80→8080" \
+    bash -c "
+        socat TCP-LISTEN:80,reuseaddr,fork TCP:localhost:8080 &
+        SOCAT_PID=\$!
+        sleep 0.5
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} --standalone --httpport 8080 \
+            > ${TMPDIR}/standalone_alias.crt 2>/dev/null
+        RC=\$?
+        kill \$SOCAT_PID 2>/dev/null
+        [ \$RC -eq 0 ] && cert_ok ${TMPDIR}/standalone_alias.crt 'Pebble'
+    "
+
+run_test "standalone TLS-ALPN on --tls-alpn-01-port 8443 + socat 443→8443" \
+    bash -c "
+        socat TCP-LISTEN:443,reuseaddr,fork TCP:localhost:8443 &
+        SOCAT_PID=\$!
+        sleep 0.5
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} --challenge-type tls-alpn-01 --tls-alpn-01-port 8443 \
+            > ${TMPDIR}/tls_custom.crt 2>/dev/null
+        RC=\$?
+        kill \$SOCAT_PID 2>/dev/null
+        [ \$RC -eq 0 ] && cert_ok ${TMPDIR}/tls_custom.crt 'Pebble'
+    "
+
+run_test "standalone TLS-ALPN on --tlsport 8443 (acme.sh alias) + socat 443→8443" \
+    bash -c "
+        socat TCP-LISTEN:443,reuseaddr,fork TCP:localhost:8443 &
+        SOCAT_PID=\$!
+        sleep 0.5
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} --challenge-type tls-alpn-01 --tlsport 8443 \
+            > ${TMPDIR}/tls_alias.crt 2>/dev/null
+        RC=\$?
+        kill \$SOCAT_PID 2>/dev/null
+        [ \$RC -eq 0 ] && cert_ok ${TMPDIR}/tls_alias.crt 'Pebble'
+    "
+
 # ==== ARI / --cert / --force renewal tests ====
 
 # Issue a reference cert for subsequent tests

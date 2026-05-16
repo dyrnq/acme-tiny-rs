@@ -102,6 +102,14 @@ struct Cli {
     #[arg(long = "standalone")]
     standalone: bool,
 
+    /// HTTP-01 standalone listen port (default: 80)
+    #[arg(long = "http-01-port", visible_alias = "httpport")]
+    http01_port: Option<u16>,
+
+    /// TLS-ALPN-01 standalone listen port (default: 443)
+    #[arg(long = "tls-alpn-01-port", visible_alias = "tlsport")]
+    tls_alpn01_port: Option<u16>,
+
     /// DNS provider for dns-01 challenge: manual, cloudflare (cf), alibaba (ali),
     /// aws (route53), azure, acmedns, acmeproxy, dnspod (dp), godaddy (gd),
     /// huaweicloud (huawei), duckdns, linode (linode_v4), vultr, namecheap,
@@ -1315,12 +1323,14 @@ async fn get_crt(
         let mut _standalone_server: Option<tokio::task::JoinHandle<()>> = None;
 
         if challenge_type == "tls-alpn-01" {
-            _standalone_server = Some(challenge::tls_alpn::start(&domain, &keyauthorization).await?);
-            info!("TLS-ALPN-01 server started on port 443 for {domain}");
+            let port = cli.tls_alpn01_port.unwrap_or(443);
+            _standalone_server = Some(challenge::tls_alpn::start(&domain, &keyauthorization, port).await?);
+            info!("TLS-ALPN-01 server started on port {port} for {domain}");
         } else if challenge_type == "http-01" {
             if cli.standalone {
-                _standalone_server = Some(challenge::http::start(80, &cleaned_token, &keyauthorization).await?);
-                info!("Standalone HTTP server started on port 80 for {domain}");
+                let port = cli.http01_port.unwrap_or(80);
+                _standalone_server = Some(challenge::http::start(port, &cleaned_token, &keyauthorization).await?);
+                info!("Standalone HTTP server started on port {port} for {domain}");
             } else {
                 let wellknown_path = Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
                 fs::write(&wellknown_path, &keyauthorization)

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
-pub async fn start(domain: &str, key_auth: &str) -> Result<tokio::task::JoinHandle<()>> {
+pub async fn start(domain: &str, key_auth: &str, port: u16) -> Result<tokio::task::JoinHandle<()>> {
     let domain = domain.to_string();
     let alpn_protocol = b"acme-tls/1".to_vec();
 
@@ -41,10 +41,10 @@ pub async fn start(domain: &str, key_auth: &str) -> Result<tokio::task::JoinHand
     config.alpn_protocols = vec![alpn_protocol];
 
     let acceptor = TlsAcceptor::from(Arc::new(config));
-    let listener = TcpListener::bind("0.0.0.0:443").await
-        .with_context(|| "Failed to bind port 443 for TLS-ALPN-01 server")?;
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await
+        .with_context(|| format!("Failed to bind port {port} for TLS-ALPN-01 server"))?;
 
-    info!("TLS-ALPN-01 server listening on port 443 for {domain}");
+    info!("TLS-ALPN-01 server listening on port {port} for {domain}");
 
     Ok(tokio::spawn(async move {
         loop {
