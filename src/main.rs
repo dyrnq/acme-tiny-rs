@@ -143,13 +143,17 @@ struct Cli {
     #[arg(short = 'P', long = "profile")]
     profile: Option<String>,
 
-    /// Force issuance (skip ARI check). Default true for backward compatibility.
-    #[arg(long = "force", default_value_t = true)]
+    /// Force issuance (skip ARI/renew-before check). Default true for backward compatibility.
+    #[arg(long = "force", visible_alias = "force-renewal", default_value_t = true)]
     force: bool,
 
     /// Check ARI renewal window before issuing (requires --existing-cert)
     #[arg(long = "ari")]
     ari: bool,
+
+    /// Skip issuance if --cert is valid for more than N days (acme.sh: Le_RenewalDays, certbot: renew_before_expiry)
+    #[arg(long = "renew-before", value_name = "DAYS", requires = "existing_cert")]
+    min_days_left: Option<u64>,
 
     /// Path to existing certificate for ARI check and replaces field
     #[arg(long = "existing-cert", visible_alias = "cert", value_hint = ValueHint::FilePath)]
@@ -1018,6 +1022,25 @@ async fn get_crt(
     }
     let directory: Directory =
         serde_json::from_value(dir_json).context("Failed to parse directory response")?;
+
+    // --- Days-based expiry gate ---
+    if let Some(days) = cli.min_days_left {
+        let cert_path = cli.existing_cert.as_ref().unwrap();
+        let (_, cert) = x509_parser::pem::pem_to_der(&std::fs::read(cert_path)?)
+            .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
+        let (_, parsed) = x509_parser::parse_x509_certificate(&cert.contents)
+            .context("Failed to parse certificate")?;
+        // Extract notAfter as epoch seconds (approximate — good enough for days gate)
+        let not_after = parsed.tbs_certificate.validity.not_after;
+        let expiry_secs = not_after.timestamp();
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let remaining_days = (expiry_secs - now_secs) / 86400;
+        if remaining_days > days as i64 && !cli.force {
+            info!("Certificate valid for {remaining_days} days (> {days} days). Skipping issuance.");
+            return Ok(String::new());
+        }
+    }
 
     // --- ARI pre-check (RFC 9773) ---
     let cert_id_for_replaces = if cli.ari && cli.existing_cert.is_some() {
