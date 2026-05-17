@@ -294,7 +294,7 @@ ${BINARY} \
     --account-key ${KEYS_DIR}/account.key \
     --csr ${KEYS_DIR}/domain.csr \
     --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-    ${BASE_ARGS} \
+    ${BASE_ARGS} -P default \
     > ${TMPDIR}/ari_cert.crt 2>/dev/null || { echo -e "${RED}FAILED${NC} (issue)"; FAILED=$((FAILED+1)); }
 if ${BINARY} ari --cert ${TMPDIR}/ari_cert.crt --directory-url ${DIRECTORY_URL} --insecure > ${TMPDIR}/ari_out.json 2> ${TMPDIR}/ari_err.log; then
     SW=$(grep -o '"suggestedWindow":{[^}]*}' ${TMPDIR}/ari_out.json)
@@ -436,7 +436,7 @@ ${BINARY} \
     --account-key ${KEYS_DIR}/account.key \
     --csr ${KEYS_DIR}/domain.csr \
     --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-    ${BASE_ARGS} \
+    ${BASE_ARGS} -P default \
     > ${TMPDIR}/ref.crt 2>/dev/null || { echo "FATAL: cannot issue ref cert"; exit 1; }
 
 run_test "issue cert with --cert (replaces, no ARI check)" \
@@ -510,7 +510,7 @@ ${BINARY} \
     --account-key ${KEYS_DIR}/account.key \
     --csr ${KEYS_DIR}/domain.csr \
     --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-    ${BASE_ARGS} \
+    ${BASE_ARGS} -P default \
     > ${TMPDIR}/renew_ref.crt 2>/dev/null || { echo "FATAL: cannot issue renew_ref cert"; exit 1; }
 
 run_test "--renew-before 100: proceeds (90 days expiry within 100-day window)" \
@@ -531,7 +531,7 @@ ${BINARY} \
     --account-key ${KEYS_DIR}/account.key \
     --csr ${KEYS_DIR}/domain.csr \
     --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-    ${BASE_ARGS} \
+    ${BASE_ARGS} -P default \
     > ${TMPDIR}/renew_skip_ref.crt 2>/dev/null || { echo "FATAL: cannot issue renew_skip ref"; exit 1; }
 
 run_test_debug "--renew-before 30: skips (90 days remaining > 30 day threshold)" \
@@ -557,7 +557,7 @@ ${BINARY} \
     --account-key ${KEYS_DIR}/account.key \
     --csr ${KEYS_DIR}/domain.csr \
     --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-    ${BASE_ARGS} \
+    ${BASE_ARGS} -P default \
     > ${TMPDIR}/renew_force_ref.crt 2>/dev/null || { echo "FATAL: cannot issue force ref cert"; exit 1; }
 
 run_test "--renew-before 30 --force: gate applies (--renew-before overrides --force)" \
