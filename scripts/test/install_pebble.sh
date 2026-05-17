@@ -61,6 +61,16 @@ cat > "${PEBBLE_DIR}/pebble-config.json" << EOF
         "externalAccountBindingRequired": false,
         "externalAccountMACKeys": {
             "pebble-eab": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        },
+        "profiles": {
+            "default": {
+                "description": "Standard 90-day validity",
+                "validityPeriod": 7776000
+            },
+            "short": {
+                "description": "Short-lived 6-day validity (ARI/renew-before testing)",
+                "validityPeriod": 518400
+            }
         }
     }
 }

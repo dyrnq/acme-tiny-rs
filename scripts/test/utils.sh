@@ -88,6 +88,7 @@ start_pebble() {
     # Allow authz reuse and set nonce reject rate
     export PEBBLE_AUTHZREUSE=100
     export PEBBLE_WFE_NONCEREJECT="${1:-0}"
+    export PEBBLE_VA_ALWAYS_VALID=1
 
     # Trust pebble cert
     export SSL_CERT_FILE="${PEBBLE_CERT}"
