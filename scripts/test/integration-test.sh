@@ -35,6 +35,22 @@ run_test() {
     fi
 }
 
+# Debug variant — keeps stderr visible for troubleshooting
+run_test_debug() {
+    local name="$1"
+    shift
+    echo -n "  ${name}... "
+    if "$@" 2>&1; then
+        echo -e "${GREEN}OK${NC}"
+        PASSED=$((PASSED + 1))
+        return 0
+    else
+        echo -e "${RED}FAILED${NC}"
+        FAILED=$((FAILED + 1))
+        return 1
+    fi
+}
+
 # --- Setup ---
 echo "=== acme-tiny-rs Integration Tests ==="
 echo ""
@@ -485,6 +501,125 @@ run_test "--output overwrites --cert path atomically" \
             --output ${TMPDIR}/overwrite.crt \
             > /dev/null 2>&1 && \
         cert_ok ${TMPDIR}/overwrite.crt 'Pebble'
+    "
+
+# ==== --renew-before expiry gate ====
+
+# Issue a fresh cert for each renew-before test
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} \
+    > ${TMPDIR}/renew_ref.crt 2>/dev/null || { echo "FATAL: cannot issue renew_ref cert"; exit 1; }
+
+run_test "--renew-before 100: proceeds (90 days expiry within 100-day window)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/renew_ref.crt --renew-before 100 \
+            --output ${TMPDIR}/renew_win.crt 2>/dev/null
+        # 90 < 100 → should proceed with issuance
+        cert_ok ${TMPDIR}/renew_win.crt 'Pebble'
+    "
+
+# Fresh cert for skip test
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} \
+    > ${TMPDIR}/renew_skip_ref.crt 2>/dev/null || { echo "FATAL: cannot issue renew_skip ref"; exit 1; }
+
+run_test "--renew-before 30: skips (90 days remaining > 30 day threshold)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/renew_skip_ref.crt --renew-before 30 \
+            --output ${TMPDIR}/renew_out.crt 2>/dev/null
+        [ ! -s ${TMPDIR}/renew_out.crt ]
+    "
+
+# Issue a separate cert for the force test (avoids replaces conflict)
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} \
+    > ${TMPDIR}/renew_force_ref.crt 2>/dev/null || { echo "FATAL: cannot issue force ref cert"; exit 1; }
+
+run_test "--renew-before 30 + --force: force overrides gate" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/renew_force_ref.crt --renew-before 30 --force \
+            > ${TMPDIR}/renew_force.crt 2>/dev/null
+        # --force overrides --renew-before gate
+        cert_ok ${TMPDIR}/renew_force.crt 'Pebble'
+    "
+
+# ==== Short-lived profile (-P short, 6-day validity) ====
+
+run_test "-P short: issues 6-day certificate" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} -P short \
+            > ${TMPDIR}/short.crt 2>/dev/null
+        cert_ok ${TMPDIR}/short.crt 'Pebble'
+    "
+
+# Issue fresh short certs for each renew-before test (avoid replaces conflict)
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} -P short \
+    > ${TMPDIR}/short_skip_ref.crt 2>/dev/null || { echo "FATAL: cannot issue short skip ref"; exit 1; }
+
+run_test "--renew-before 3 + -P short: skips (6 > 3 days remaining)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/short_skip_ref.crt -P short --renew-before 3 \
+            --output ${TMPDIR}/short_skip.crt 2>/dev/null
+        # 6 days remaining > 3 → skip
+        [ ! -s ${TMPDIR}/short_skip.crt ]
+    "
+
+# Issue fresh cert for the --renew-before 10 test (6 < 10)
+${BINARY} \
+    --account-key ${KEYS_DIR}/account.key \
+    --csr ${KEYS_DIR}/domain.csr \
+    --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+    ${BASE_ARGS} -P short \
+    > ${TMPDIR}/short_go_ref.crt 2>/dev/null || { echo "FATAL: cannot issue short go ref"; exit 1; }
+
+run_test "--renew-before 10 + -P short: proceeds (6 < 10 days remaining)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/short_go_ref.crt -P short --renew-before 10 \
+            --output ${TMPDIR}/short_go.crt 2>/dev/null
+        # 6 days remaining < 10 → proceed
+        cert_ok ${TMPDIR}/short_go.crt 'Pebble'
     "
 
 # ==== TLS version compatibility ====
