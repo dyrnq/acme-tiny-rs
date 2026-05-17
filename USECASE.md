@@ -126,8 +126,8 @@ whether you check the existing certificate before running.
 
 | certbot                       | acme.sh                       | acme-tiny-rs                                                                       |
 |-------------------------------|-------------------------------|------------------------------------------------------------------------------------|
-| `--http-01-port 8080`         | `--httpport 8080`             | port 80 only (ACME spec requires port 80)                                          |
-| `--tls-alpn-01-port 4443`     | not supported                 | `--challenge-type tls-alpn-01` (port 443, ACME spec)                               |
+| `--http-01-port 8080`         | `--httpport 8080`             | `--http-01-port 8080` (alias: `--httpport 8080`)                        |
+| `--tls-alpn-01-port 4443`     | `--tlsport 4443`              | `--tls-alpn-01-port 8443` (alias: `--tlsport 8443`)                     |
 | `--issuance-timeout 90`       | not supported                 | `--connect-timeout 10`, `--timeout 30` (optional, system defaults if unset)        |
 
 ## 11. Proxy support
@@ -168,7 +168,7 @@ All tools respect the standard proxy environment variables:
 |-----------------|-----------|--------------------------------------------|
 | certbot         | ~2000+    | pytest + certbot-ci                        |
 | acme.sh         | ~200      | bash + Let's Encrypt staging               |
-| acme-tiny-rs    | **58**    | bash + Pebble ACME test server             |
+| acme-tiny-rs    | **65**    | bash + Pebble ACME test server             |
 
 ## Design philosophy differences
 

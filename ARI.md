@@ -41,16 +41,19 @@ currently possible, preserving original acme-tiny behavior.)
 | 6 | ✓ | ✓ | — | ✗ | Query ARI. **In window** → issue with `replaces`, stdout. **Not in window** → exit, stdout empty |
 | 7 | ✓ | ✓ | — | `/path` | Query ARI. **In window** → issue with `replaces`, atomic write. **Not in window** → exit, `--output` **NOT written** (file unchanged) |
 | 8 | ✓ | ✓ | ✓ | — | Same as #6/#7 — `--ari` wins over `--force` |
+| 9 | ✗ | ✓ | — | — | `--renew-before N`: skip if cert valid > N days (certbot: `renew_before_expiry`, acme.sh: `Le_RenewalDays`) |
+| 10 | ✗ | ✓ | ✓ | — | `--renew-before N --force`: force overrides the gate, always issue |
 
 ### Key guarantees
 
-- **`--output` preserved on ARI skip:** when ARI says not in window, the output
-  file is never touched — the existing certificate remains intact. Internally,
+- **`--output` preserved on ARI/renew-before skip:** when the expiry gate or ARI
+  says not in window, the output file is never touched — the existing certificate
+  remains intact. Internally,
   `get_crt()` returns an empty string and the output block is skipped entirely.
 - **`replaces` sent when `--cert` provided:** regardless of `--ari`, the
   certificate ID is computed and passed as the `"replaces"` field in the
   new-order payload (RFC 8739 rate-limit exemption).
-- **Hooks not executed on ARI skip:** all hooks (pre, post, deploy, renew) are
+- **Hooks not executed on ARI/renew-before skip:** all hooks (pre, post, deploy, renew) are
   guarded by the empty-certificate check and do not run when issuance is skipped.
 
 ## Renewal flow
