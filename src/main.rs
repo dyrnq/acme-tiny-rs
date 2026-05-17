@@ -1023,6 +1023,9 @@ async fn get_crt(
     let directory: Directory =
         serde_json::from_value(dir_json).context("Failed to parse directory response")?;
 
+    // When --renew-before or --ari is active, the gate applies regardless of --force default
+    let force_active = if cli.min_days_left.is_none() && !cli.ari { cli.force } else { false };
+
     // --- Days-based expiry gate ---
     if let Some(days) = cli.min_days_left {
         let cert_path = cli.existing_cert.as_ref().unwrap();
@@ -1036,7 +1039,7 @@ async fn get_crt(
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
         let remaining_days = (expiry_secs - now_secs) / 86400;
-        if remaining_days > days as i64 && !cli.force {
+        if remaining_days > days as i64 && !force_active {
             info!("Certificate valid for {remaining_days} days (> {days} days). Skipping issuance.");
             return Ok(String::new());
         }
