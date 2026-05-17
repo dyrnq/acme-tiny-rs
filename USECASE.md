@@ -33,7 +33,7 @@ whether you check the existing certificate before running.
 | `renew_before_expiry = 30` (config)   | `Le_RenewalDays = 80` (stateful)       | `--renew-before 30` (stateless; skip if cert valid > 30 days)                                      |
 | `certbot renew --force-renewal`       | `acme.sh --renew --force`             | `acme-tiny-rs --account-key key --csr csr --force` (skip ARI check)                                |
 | `certbot renew --dry-run`             | `acme.sh --renew --staging`           | `--server letsencrypt-staging`                                                                      |
-| cron scheduling                       | `acme.sh --cron` (pre-scheduled in acme.sh data) | System cron: `0 3 * * 0 acme-tiny-rs --account-key key --csr csr --existing-cert cert.pem --renew-before 30 --ari --output cert.pem --deploy-hook ...` |
+| cron scheduling                       | `acme.sh --cron` (pre-scheduled in acme.sh data) | System cron (pick one): `--ari` for CA-controlled, `--renew-before 30` for user-controlled; see [OUTPUT.md](OUTPUT.md) |
 
 ### ARI (RFC 9773) renewal gating
 
@@ -143,6 +143,7 @@ All tools respect the standard proxy environment variables:
 | certbot                                           | acme.sh                                     | acme-tiny-rs                                                            |
 |---------------------------------------------------|---------------------------------------------|-------------------------------------------------------------------------|
 | cert stored in `/etc/letsencrypt/live/`            | cert stored in `~/.acme.sh/domain/`          | `--output /path/cert.pem` (atomic: tmp → rename) or stdout              |
+| shell `>` safe (no skip gates)                     | shell `>` safe (no skip gates)               | **`> cert.pem` unsafe** — see [OUTPUT.md](OUTPUT.md)                    |
 | JSON output: `certbot certificates --json`         | n/a                                         | `list-ca --json`, `inspect --json`, `inspect-ca` (raw JSON)             |
 | `--quiet` flag                                     | `--debug 0\|1\|2\|3`                          | `-v`, `-vv`, `-vvv` (stderr verbosity)                                  |
 

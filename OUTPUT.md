@@ -31,6 +31,12 @@ acme-tiny-rs --renew-before 30 --cert /etc/ssl/cert.pem \
 | `--ari` skip (not in window) | ❌ **file truncated to empty** | ✅ file untouched |
 | Crash mid-write | ❌ half-written cert | ✅ tmp file, no rename |
 
+> **Note:** `--ari` and `--renew-before` are designed for independent use —
+> choose one, not both.  `--ari` delegates the renewal window to the CA
+> (RFC 9773); `--renew-before N` defines a user-controlled window.  Both
+> produce the same output-safe behavior: `--output` untouched on skip,
+> hooks not executed.
+
 ## Why this matters now
 
 Before v0.1.6, `acme-tiny-rs` always issued a certificate on every run.
@@ -71,11 +77,18 @@ returns early before the output block.
        && mv /tmp/cert.tmp /etc/ssl/cert.pem
    ```
 
-3. **Cron example:**
+3. **Cron examples (pick one):**
 
    ```sh
+   # CA-controlled renewal (ARI, RFC 9773):
    0 3 * * 0 acme-tiny-rs --account-key key --csr csr \
-       --cert /etc/ssl/cert.pem --renew-before 30 --ari \
+       --cert /etc/ssl/cert.pem --ari \
+       --output /etc/ssl/cert.pem \
+       --deploy-hook "systemctl reload nginx"
+
+   # User-controlled renewal window:
+   0 3 * * 0 acme-tiny-rs --account-key key --csr csr \
+       --cert /etc/ssl/cert.pem --renew-before 30 \
        --output /etc/ssl/cert.pem \
        --deploy-hook "systemctl reload nginx"
    ```
