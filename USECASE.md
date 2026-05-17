@@ -30,9 +30,10 @@ whether you check the existing certificate before running.
 | certbot                               | acme.sh                                | acme-tiny-rs                                                                                         |
 |---------------------------------------|----------------------------------------|------------------------------------------------------------------------------------------------------|
 | `certbot renew` (checks expiry)       | `acme.sh --renew -d ex.com` (checks expiry) | `acme-tiny-rs --account-key key --csr csr --existing-cert old.crt --ari`                           |
+| `renew_before_expiry = 30` (config)   | `Le_RenewalDays = 80` (stateful)       | `--renew-before 30` (stateless; skip if cert valid > 30 days)                                      |
 | `certbot renew --force-renewal`       | `acme.sh --renew --force`             | `acme-tiny-rs --account-key key --csr csr --force` (skip ARI check)                                |
 | `certbot renew --dry-run`             | `acme.sh --renew --staging`           | `--server letsencrypt-staging`                                                                      |
-| cron scheduling                       | `acme.sh --cron` (pre-scheduled in acme.sh data) | System cron: `0 3 * * 0 acme-tiny-rs --account-key key --csr csr --existing-cert cert.pem --ari --output cert.pem --deploy-hook ...` |
+| cron scheduling                       | `acme.sh --cron` (pre-scheduled in acme.sh data) | System cron: `0 3 * * 0 acme-tiny-rs --account-key key --csr csr --existing-cert cert.pem --renew-before 30 --ari --output cert.pem --deploy-hook ...` |
 
 ### ARI (RFC 9773) renewal gating
 
