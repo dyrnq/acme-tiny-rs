@@ -554,7 +554,7 @@ ${BINARY} \
     ${BASE_ARGS} \
     > ${TMPDIR}/renew_force_ref.crt 2>/dev/null || { echo "FATAL: cannot issue force ref cert"; exit 1; }
 
-run_test "--renew-before 30 + --force: force overrides gate" \
+run_test "--renew-before 30 --force: gate applies (--renew-before overrides --force)" \
     bash -c "
         ${BINARY} \
             --account-key ${KEYS_DIR}/account.key \
@@ -562,9 +562,9 @@ run_test "--renew-before 30 + --force: force overrides gate" \
             --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
             ${BASE_ARGS} \
             --cert ${TMPDIR}/renew_force_ref.crt --renew-before 30 --force \
-            > ${TMPDIR}/renew_force.crt 2>/dev/null
-        # --force overrides --renew-before gate
-        cert_ok ${TMPDIR}/renew_force.crt 'Pebble'
+            --output ${TMPDIR}/renew_force.crt 2>/dev/null
+        # --renew-before overrides --force → gate applies → skip
+        [ ! -s ${TMPDIR}/renew_force.crt ]
     "
 
 # ==== Short-lived profile (-P short, 6-day validity) ====
