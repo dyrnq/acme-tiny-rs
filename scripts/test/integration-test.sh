@@ -534,15 +534,21 @@ ${BINARY} \
     ${BASE_ARGS} \
     > ${TMPDIR}/renew_skip_ref.crt 2>/dev/null || { echo "FATAL: cannot issue renew_skip ref"; exit 1; }
 
-run_test "--renew-before 30: skips (90 days remaining > 30 day threshold)" \
+run_test_debug "--renew-before 30: skips (90 days remaining > 30 day threshold)" \
     bash -c "
+        # Diagnostic: cert and system time
+        echo \"--- renew-before 30 diagnostics ---\"
+        echo \"system date: \$(date -Iseconds)\"
+        openssl x509 -in ${TMPDIR}/renew_skip_ref.crt -noout -dates 2>&1 || true
+        echo \"--- end diagnostics ---\"
         ${BINARY} \
             --account-key ${KEYS_DIR}/account.key \
             --csr ${KEYS_DIR}/domain.csr \
             --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
             ${BASE_ARGS} \
             --cert ${TMPDIR}/renew_skip_ref.crt --renew-before 30 \
-            --output ${TMPDIR}/renew_out.crt 2>/dev/null
+            --output ${TMPDIR}/renew_out.crt 2>&1
+        echo \"exit code: \$?\"
         [ ! -s ${TMPDIR}/renew_out.crt ]
     "
 
