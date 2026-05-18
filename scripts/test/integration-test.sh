@@ -490,6 +490,34 @@ run_test "--output atomic: no .tmp residue" \
         ls ${TMPDIR}/atomic.crt.tmp-* 2>/dev/null && exit 1 || true
     "
 
+run_test "--log requires --output" \
+    bash -c "
+        if ${BINARY} --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --log ${TMPDIR}/nope.log \
+            > /dev/null 2>&1; then
+            echo 'Expected failure: --log without --output should be rejected'
+            exit 1
+        fi
+    "
+
+run_test "--log with --output writes HTTP req/resp" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --output ${TMPDIR}/logged.crt \
+            --log ${TMPDIR}/req.log \
+            > /dev/null 2>&1 && \
+        grep -q 'POST' ${TMPDIR}/req.log && \
+        grep -q 'GET' ${TMPDIR}/req.log && \
+        cert_ok ${TMPDIR}/logged.crt 'Pebble'
+    "
+
 run_test "--output overwrites --cert path atomically" \
     bash -c "
         cp ${TMPDIR}/ref.crt ${TMPDIR}/overwrite.crt
