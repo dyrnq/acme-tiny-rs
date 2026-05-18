@@ -23,6 +23,38 @@ use sha2::{Digest, Sha256};
 use x509_parser::prelude::FromDer;
 use x509_parser::extensions::{ParsedExtension, GeneralName};
 
+use std::io::{BufWriter, Write};
+use std::sync::{Mutex, OnceLock};
+
+/// Request/response log file (initialized once in main)
+static LOG_FILE: OnceLock<Mutex<Option<BufWriter<std::fs::File>>>> = OnceLock::new();
+/// Log verbosity level (1 = request line, 2 = request + body)
+static LOG_LEVEL: OnceLock<u8> = OnceLock::new();
+
+/// Initialize log file from --log and --log-level flags
+fn init_log(log_path: Option<&str>, log_level: u8) -> Result<()> {
+    LOG_LEVEL.set(log_level).ok();
+    if let Some(path) = log_path {
+        let f = std::fs::File::create(path)
+            .with_context(|| format!("Failed to create log file: {path}"))?;
+        LOG_FILE.set(Mutex::new(Some(BufWriter::new(f)))).ok();
+    }
+    Ok(())
+}
+
+macro_rules! log_request {
+    ($($arg:tt)*) => {{
+        if let Some(mutex) = LOG_FILE.get() {
+            if let Ok(mut guard) = mutex.lock() {
+                if let Some(ref mut writer) = *guard {
+                    let _ = writeln!(writer, $($arg)*);
+                    let _ = writer.flush();
+                }
+            }
+        }
+    }};
+}
+
 const DEFAULT_SERVER: &str = "letsencrypt";
 const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 
@@ -150,6 +182,14 @@ struct Cli {
     /// Check ARI renewal window before issuing (requires --existing-cert)
     #[arg(long = "ari")]
     ari: bool,
+
+    /// Write request/response to log file (requires --output)
+    #[arg(long = "log", value_hint = ValueHint::FilePath, requires = "output")]
+    log: Option<String>,
+
+    /// Log verbosity: 1 = request line only, 2 = request + body (default: 1)
+    #[arg(long = "log-level", default_value = "1")]
+    log_level: u8,
 
     /// Skip issuance if --cert is valid for more than N days (acme.sh: Le_RenewalDays, certbot: renew_before_expiry)
     #[arg(long = "renew-before", value_name = "DAYS", requires = "existing_cert")]
@@ -502,6 +542,15 @@ pub(crate) async fn do_request(
     let data_str = data
         .as_ref()
         .map(|d| String::from_utf8_lossy(d).to_string());
+    let method = if data.is_some() { "POST" } else { "GET" };
+
+    // Log request
+    if let Some(ref body) = data_str {
+        log_request!("-> {} {} {}", method, url, body);
+    } else {
+        log_request!("-> {} {}", method, url);
+    }
+
     let resp = if let Some(body) = data {
         client
             .post(url)
@@ -524,6 +573,9 @@ pub(crate) async fn do_request(
     let body_text = resp.text().await.unwrap_or_default();
     let json: serde_json::Value =
         serde_json::from_str(&body_text).unwrap_or(serde_json::Value::Null);
+
+    // Log response
+    log_request!("<- {} {} {}", status.as_u16(), url, body_text);
 
     // Validate HTTP status (ACME success codes: 200, 201, 204)
     if status != reqwest::StatusCode::OK
@@ -1606,6 +1658,9 @@ async fn download_certificate(
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Initialize request/response log (requires --output)
+    init_log(cli.log.as_deref(), cli.log_level)?;
 
     // Configure logging
     let log_level = if cli.quiet {
