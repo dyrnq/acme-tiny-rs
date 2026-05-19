@@ -21,7 +21,7 @@ Rust 重写 [acme-tiny](https://github.com/diafygi/acme-tiny)，兼容全部 CLI
 - **单文件部署**：`scp` 一个二进制到服务器即可，不需要 Python/OpenSSL
 - **密钥类型**：RSA + ECDSA P-256/P-384 + Ed25519 账户密钥（PEM 自动识别）
   - **⚠️ Let's Encrypt 不支持 Ed25519 和 IP 证书** — Ed25519 仅可用于账户密钥。域名密钥须使用 RSA 或 ECDSA。IP 证书需支持 RFC 8738 的 CA
-- **验证方式**：http-01、dns-01、tls-alpn-01、dns-persist-01
+- **验证方式**：http-01、dns-01、tls-alpn-01、dns-persist-01、dns-account-01
 - **DNS 服务商**：Cloudflare、阿里云、腾讯云、AWS Route53、Azure、GoDaddy、Google Cloud、DigitalOcean、OVH 等
 - **Standalone 模式**：内置 HTTP 服务器（`--standalone`）和 TLS-ALPN 服务器（`--challenge-type tls-alpn-01`）
 - **Hooks**：兼容 acme.sh 的 pre/post/renew/deploy/notify 钩子
@@ -195,7 +195,7 @@ service nginx reload
 --ca <URL>                 DEPRECATED, use --server or --directory-url instead
 --contact <CONTACT>...     账户联系方式（如 mailto:admin@example.com）
 --check-port <PORT>        自检时使用的端口 [默认: 80]
---challenge-type <TYPE>    http-01（默认）、dns-01、tls-alpn-01、dns-persist-01
+--challenge-type <TYPE>    http-01（默认）、dns-01、tls-alpn-01、dns-persist-01、dns-account-01
 --dns-provider <NAME>      DNS 提供商名称 [默认: manual]
 --standalone               使用内置 HTTP 服务器（端口 80），不写磁盘文件
 --agree-tos                同意 CA 服务条款 [默认: true]

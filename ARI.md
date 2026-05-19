@@ -153,3 +153,11 @@ acme-tiny-rs --account-key key --csr csr --ari ...
 - [draft-ietf-acme-ari-03](https://datatracker.ietf.org/doc/draft-ietf-acme-ari-03/)
 
 [rfc9773]: https://www.rfc-editor.org/rfc/rfc9773.html
+
+## alreadyReplaced (HTTP 409)
+
+When a `replaces` order targets a certificate already replaced by another process,
+the CA returns `urn:ietf:params:acme:error:alreadyReplaced` (HTTP 409). acme-tiny-rs
+auto-retries the newOrder request **without** the `replaces` field — matching acme.sh
+and lego behavior. This ensures concurrent renewals (e.g., two cron jobs racing on
+the same certificate) don't trigger a permanent failure.

@@ -112,3 +112,54 @@ impl DnsProvider for MyDns {
 ## Reference
 
 All providers are ported from [acmesh-official/acme.sh/dnsapi](https://github.com/acmesh-official/acme.sh/tree/master/dnsapi).
+
+## Experimental DNS challenge types
+
+### dns-persist-01 (draft-ietf-acme-dns-persist-00)
+
+Persistent DNS challenge. TXT record is set once and **never cleaned up**, surviving
+across renewals. Same DNS provider as `dns-01`.
+
+```sh
+acme-tiny-rs ... \
+    --challenge-type dns-persist-01 \
+    --dns-provider cloudflare
+```
+
+### dns-account-01 (draft-ietf-acme-dns-account-01)
+
+Account-scoped DNS challenge. DNS record is set once per account key and reused
+for all domains under that account — zero DNS API calls after initial setup.
+TXT value = `SHA256(account key JWK thumbprint)`.
+
+```sh
+acme-tiny-rs ... \
+    --challenge-type dns-account-01 \
+    --dns-provider cloudflare
+```
+
+## Exec DNS provider
+
+Generic provider that calls external scripts. Configured via environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `ACME_DNS_EXEC_PRESENT` | Path to script: `present.sh <domain> <txt_value>` |
+| `ACME_DNS_EXEC_CLEAN`   | Path to script: `clean.sh <domain> <txt_value>` |
+
+```sh
+acme-tiny-rs ... \
+    --challenge-type dns-01 \
+    --dns-provider exec
+```
+
+## Integration testing with pebble-challtestsrv
+
+DNS challenge tests use pebble-challtestsrv for real TXT record validation:
+
+1. **pebble-challtestsrv** binds DNS on `:8053` and management API on `:8055`
+2. **Pebble** starts with `-dnsserver :8053` to query mock DNS
+3. **Exec provider** scripts set TXT records via `curl localhost:8055/set-txt`
+4. **Pebble VA** validates `_acme-challenge.<domain>` TXT against mock DNS
+
+Tests cover: `dns-01`, `dns-persist-01`, `dns-account-01` (74 tests total).

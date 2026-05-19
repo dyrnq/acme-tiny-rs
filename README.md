@@ -23,7 +23,7 @@ A Rust port of [acme-tiny](https://github.com/diafygi/acme-tiny), fully compatib
   - **⚠️ Let's Encrypt does not support Ed25519 or IP certificates**
   - Ed25519 works for *account keys* only (JWS signing). Domain keys for CSR must be RSA or ECDSA.
   - **IP certificates** (RFC 8738) are supported but require a CA that implements the extension (ZeroSSL, Google Trust).
-- **Challenge types**: http-01, dns-01, tls-alpn-01, dns-persist-01
+- **Challenge types**: http-01, dns-01, tls-alpn-01, dns-persist-01, dns-account-01
 - **DNS providers**: Cloudflare, Alibaba, Tencent, AWS Route53, Azure, GoDaddy, Google Cloud, DigitalOcean, OVH, and more — see [DNS.md](DNS.md)
 - **Standalone mode**: Built-in HTTP server (`--standalone`) and TLS-ALPN server (`--challenge-type tls-alpn-01`)
 - **EAB support**: External Account Binding for CAs that require it (ZeroSSL, Google Trust)
@@ -199,7 +199,7 @@ service nginx reload
 --ca <URL>                 DEPRECATED, use --server or --directory-url instead
 --contact <CONTACT>...     Contact details (e.g. mailto:admin@example.com)
 --check-port <PORT>        Port for http-01 self-check [default: 80]
---challenge-type <TYPE>    http-01 (default), dns-01, tls-alpn-01, or dns-persist-01
+--challenge-type <TYPE>    http-01 (default), dns-01, tls-alpn-01, dns-persist-01, or dns-account-01
 --dns-provider <NAME>      DNS provider for DNS challenges [default: manual]
 --standalone               Use built-in HTTP server on port 80 (no disk writes)
 --agree-tos                Agree to CA Terms of Service [default: true]
