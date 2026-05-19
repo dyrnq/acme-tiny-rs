@@ -451,6 +451,28 @@ run_test "issue cert with --cert (replaces, no ARI check)" \
         cert_ok ${TMPDIR}/replaces.crt 'Pebble'
     "
 
+run_test_debug "alreadyReplaced retry: --cert (used twice) retries without replaces" \
+    bash -c "
+        # First use: sends replaces → Pebble accepts
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/ref.crt \
+            > ${TMPDIR}/already1.crt 2>${TMPDIR}/already1.err && \
+        cert_ok ${TMPDIR}/already1.crt 'Pebble' && \
+        # Second use: same --cert triggers alreadyReplaced → retry w/o replaces
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --cert ${TMPDIR}/ref.crt \
+            > ${TMPDIR}/already2.crt 2>${TMPDIR}/already2.err || { cat ${TMPDIR}/already2.err; exit 1; }
+        cert_ok ${TMPDIR}/already2.crt 'Pebble'
+    "
+
 run_test "--ari + --cert: skips when not in window" \
     bash -c "
         ${BINARY} \
