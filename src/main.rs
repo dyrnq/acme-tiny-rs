@@ -224,8 +224,8 @@ struct Cli {
     #[arg(long = "renew-hook")]
     renew_hook: Option<String>,
 
-    /// Command or script to run after certificate issuance to deploy
-    #[arg(long = "deploy-hook")]
+    /// Command or script to run after certificate issuance to deploy (requires --output)
+    #[arg(long = "deploy-hook", requires = "output")]
     deploy_hook: Option<String>,
 
     /// Command or script to run for notifications
@@ -1594,22 +1594,6 @@ async fn get_crt(
 
     info!("Certificate signed!");
 
-    // --renew-hook, --deploy-hook, --notify-hook
-    let csr_path = cli.csr.as_deref().unwrap_or("");
-    let envs = hook::Hook::acme_env_vars(csr_path, csr_path, &domains[0]);
-    #[allow(unused_must_use)]
-    {
-        if let Some(ref cmd) = cli.renew_hook {
-            hook::Hook::Renew(cmd.clone()).run(&envs);
-        }
-        if let Some(ref cmd) = cli.deploy_hook {
-            hook::Hook::Deploy(cmd.clone()).run(&envs);
-        }
-        if let Some(ref cmd) = cli.notify_hook {
-            hook::Hook::Notify(cmd.clone()).run(&envs);
-        }
-    }
-
     Ok(certificate_pem)
 }
 
@@ -1829,6 +1813,9 @@ async fn main() -> Result<()> {
 
     // ARI skip: empty certificate means no issuance needed
     if certificate.is_empty() {
+        if let Some(ref cmd) = cli.notify_hook {
+            let _ = hook::Hook::Notify(cmd.clone()).run(&[]);
+        }
         return Ok(());
     }
 
@@ -1842,6 +1829,21 @@ async fn main() -> Result<()> {
         info!("Certificate written to {path}");
     } else {
         print!("{certificate}");
+    }
+
+    // Run hooks after certificate is written to disk
+    let envs = hook::Hook::acme_env_vars("", "", "");
+    #[allow(unused_must_use)]
+    {
+        if let Some(ref cmd) = cli.renew_hook {
+            hook::Hook::Renew(cmd.clone()).run(&envs);
+        }
+        if let Some(ref cmd) = cli.deploy_hook {
+            hook::Hook::Deploy(cmd.clone()).run(&envs);
+        }
+        if let Some(ref cmd) = cli.notify_hook {
+            hook::Hook::Notify(cmd.clone()).run(&envs);
+        }
     }
 
     Ok(())
