@@ -235,14 +235,29 @@ run_test "pre-hook executes before ACME flow" \
 
 run_test "deploy-hook executes after cert issuance" \
     bash -c "
-        ACME_HOOK=deploy ${BINARY} \
+        rm -f ${TMPDIR}/hook_deploy.log
+        ${BINARY} \
             --account-key ${KEYS_DIR}/account.key \
             --csr ${KEYS_DIR}/domain.csr \
             --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
             ${BASE_ARGS} \
             --deploy-hook \"ACME_HOOK=deploy ${HOOK_SCRIPT}\" \
-            > ${TMPDIR}/hook_deploy.crt 2>/dev/null && \
-        grep -q 'deploy-hook-ran' ${TMPDIR}/hook_deploy.crt
+            --output ${TMPDIR}/hook_deploy.crt > /dev/null 2>&1 && \
+        cert_ok ${TMPDIR}/hook_deploy.crt 'Pebble'
+    "
+
+run_test "deploy-hook requires --output" \
+    bash -c "
+        if ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --deploy-hook 'echo fail' \
+            > /dev/null 2>&1; then
+            echo 'Expected failure: --deploy-hook without --output should be rejected'
+            exit 1
+        fi
     "
 
 run_test "post-hook runs even on failure" \
