@@ -36,6 +36,32 @@ cp "${PEBBLE_BIN}" "${PEBBLE_DIR}/pebble"
 chmod 755 "${PEBBLE_DIR}/pebble"
 rm -f /tmp/pebble.tar.gz
 
+# Download pebble-challtestsrv (separate binary, in its own tarball)
+echo "Downloading pebble-challtestsrv..."
+CHALLTESTSRV_URL="https://github.com/letsencrypt/pebble/releases/latest/download/pebble-challtestsrv-linux-amd64.tar.gz"
+CHALLTESTSRV_MIRROR="https://files.m.daocloud.io/github.com/letsencrypt/pebble/releases/latest/download/pebble-challtestsrv-linux-amd64.tar.gz"
+if [ "${PEBBLE_VERSION}" != "latest" ]; then
+    CHALLTESTSRV_URL="https://github.com/letsencrypt/pebble/releases/download/${PEBBLE_VERSION}/pebble-challtestsrv-linux-amd64.tar.gz"
+    CHALLTESTSRV_MIRROR="https://files.m.daocloud.io/github.com/letsencrypt/pebble/releases/download/${PEBBLE_VERSION}/pebble-challtestsrv-linux-amd64.tar.gz"
+fi
+if curl -fsSL --connect-timeout 10 "${CHALLTESTSRV_MIRROR}" -o /tmp/challtestsrv.tar.gz 2>/dev/null; then
+    :
+elif curl -fsSL --connect-timeout 10 "${CHALLTESTSRV_URL}" -o /tmp/challtestsrv.tar.gz 2>/dev/null; then
+    :
+else
+    echo "WARNING: pebble-challtestsrv download failed, DNS tests will skip"
+fi
+if [ -f /tmp/challtestsrv.tar.gz ]; then
+    tar -xzf /tmp/challtestsrv.tar.gz -C /tmp
+    CHALLTESTSRV_BIN=$(find /tmp -name pebble-challtestsrv -type f 2>/dev/null | head -1)
+    if [ -n "${CHALLTESTSRV_BIN}" ]; then
+        cp "${CHALLTESTSRV_BIN}" "${PEBBLE_DIR}/pebble-challtestsrv"
+        chmod 755 "${PEBBLE_DIR}/pebble-challtestsrv"
+        echo "pebble-challtestsrv installed"
+    fi
+    rm -f /tmp/challtestsrv.tar.gz
+fi
+
 # Generate test certificates for pebble (same as acme-tiny test certs)
 echo "Generating pebble TLS certificates..."
 openssl genrsa -out "${PEBBLE_CERT_DIR}/pebble.key" 4096 2>/dev/null

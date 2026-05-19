@@ -906,6 +906,86 @@ run_test "account change-key (key rollover)" \
         echo \"\$OUT\" | grep -q 'status' || { echo \"CHANGE-KEY FAILED:\"; echo \"\$OUT\"; exit 1; }
     "
 
+# ==== DNS challenge types (dns-01, dns-persist-01, dns-account-01) ====
+# Use pebble-challtestsrv for real DNS validation via exec DNS provider.
+
+if start_challtestsrv 2>/dev/null; then
+    # Kill current pebble (always-valid mode), restart with DNS validation
+    kill ${PEBBLE_PID} 2>/dev/null || true
+    sleep 1
+    if start_pebble_dns 2>/dev/null; then
+        # Create exec provider scripts using challtestsrv REST API
+        DNS_PRESENT="${TMPDIR}/dns_present.sh"
+        DNS_CLEAN="${TMPDIR}/dns_clean.sh"
+        cat > "${DNS_PRESENT}" << 'SCRIPT'
+#!/bin/sh
+# $1 = domain, $2 = TXT value
+HOST="_acme-challenge.$1"
+echo "host=$HOST value=$2" >> /tmp/dns_present.log
+curl -s http://localhost:8055/set-txt \
+  -d "{\"host\":\"$HOST\",\"value\":\"$2\"}" >> /tmp/dns_present.log 2>&1
+echo "curl_rc=$?" >> /tmp/dns_present.log
+SCRIPT
+        chmod +x "${DNS_PRESENT}"
+
+        cat > "${DNS_CLEAN}" << 'SCRIPT'
+#!/bin/sh
+# $1 = domain
+curl -s http://localhost:8055/clear-txt \
+  -d '{"host":"'"$1"'"}'
+SCRIPT
+        chmod +x "${DNS_CLEAN}"
+
+        export ACME_DNS_EXEC_PRESENT="${DNS_PRESENT}"
+        export ACME_DNS_EXEC_CLEAN="${DNS_CLEAN}"
+
+        run_test_debug "dns-01 challenge via pebble-challtestsrv" \
+            bash -c "
+                ${BINARY} \
+                    --account-key ${KEYS_DIR}/account.key \
+                    --csr ${KEYS_DIR}/domain.csr \
+                    --challenge-type dns-01 --dns-provider exec \
+                    --server pebble -k \
+                    --output ${TMPDIR}/dns01.crt 2>${TMPDIR}/dns01.err && \
+                cert_ok ${TMPDIR}/dns01.crt 'Pebble' || { cat ${TMPDIR}/dns01.err; exit 1; }
+            "
+
+        # dns-persist-01: same present, clean is no-op
+        cat > "${DNS_CLEAN}" << 'SCRIPT'
+#!/bin/sh
+exit 0
+SCRIPT
+        chmod +x "${DNS_CLEAN}"
+
+        run_test "dns-persist-01 challenge via pebble-challtestsrv" \
+            bash -c "
+                ${BINARY} \
+                    --account-key ${KEYS_DIR}/account.key \
+                    --csr ${KEYS_DIR}/domain.csr \
+                    --challenge-type dns-persist-01 --dns-provider exec \
+                    --server pebble -k \
+                    --output ${TMPDIR}/dnspersist.crt 2>/dev/null && \
+                cert_ok ${TMPDIR}/dnspersist.crt 'Pebble'
+            "
+
+        # dns-account-01: same present, clean is no-op
+        run_test "dns-account-01 challenge via pebble-challtestsrv" \
+            bash -c "
+                ${BINARY} \
+                    --account-key ${KEYS_DIR}/account.key \
+                    --csr ${KEYS_DIR}/domain.csr \
+                    --challenge-type dns-account-01 --dns-provider exec \
+                    --server pebble -k \
+                    --output ${TMPDIR}/dnsacct.crt 2>/dev/null && \
+                cert_ok ${TMPDIR}/dnsacct.crt 'Pebble'
+            "
+    else
+        echo "  DNS tests: SKIPPED (pebble DNS mode failed)"
+    fi
+else
+    echo "  DNS tests: SKIPPED (challtestsrv not available)"
+fi
+
 echo ""
 echo "--- Results ---"
 echo -e "Passed: ${GREEN}${PASSED}${NC}"

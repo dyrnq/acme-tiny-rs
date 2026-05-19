@@ -11,6 +11,7 @@ BINARY="${PROJECT_DIR}/target/release/acme-tiny-rs"
 # Defaults
 PEBBLE_DIR="${PEBBLE_DIR:-/opt/pebble}"
 PEBBLE_BIN="${PEBBLE_DIR}/pebble"
+CHALLTESTSRV_BIN="${PEBBLE_DIR}/pebble-challtestsrv"
 PEBBLE_CONFIG="${PEBBLE_DIR}/pebble-config.json"
 PEBBLE_CERT="${PEBBLE_DIR}/certs/pebble.crt"
 
@@ -150,11 +151,56 @@ start_challenge_server() {
     return 1
 }
 
-# Stop pebble and challenge server
+# Stop pebble, challenge server, and challtestsrv
 cleanup_servers() {
     [ -n "${PEBBLE_PID:-}" ] && kill ${PEBBLE_PID} 2>/dev/null || true
     [ -n "${CHALLENGE_PID:-}" ] && kill ${CHALLENGE_PID} 2>/dev/null || true
+    [ -n "${CHALLTESTSRV_PID:-}" ] && kill ${CHALLTESTSRV_PID} 2>/dev/null || true
     wait 2>/dev/null || true
+}
+
+# Start pebble-challtestsrv for DNS-01 challenge testing
+start_challtestsrv() {
+    if [ ! -x "${CHALLTESTSRV_BIN}" ]; then
+        echo "pebble-challtestsrv not found at ${CHALLTESTSRV_BIN}. Skipping DNS tests."
+        return 1
+    fi
+    echo "Starting pebble-challtestsrv..."
+    "${CHALLTESTSRV_BIN}" -dnsserver ":8053" -management ":8055" -http01 "" -https01 "" -tlsalpn01 "" &
+    CHALLTESTSRV_PID=$!
+    sleep 2
+    echo "pebble-challtestsrv ready (PID: ${CHALLTESTSRV_PID})"
+    return 0
+}
+
+# Start pebble with DNS server for DNS-01 testing
+start_pebble_dns() {
+    if [ ! -x "${PEBBLE_BIN}" ]; then
+        echo "Pebble not found at ${PEBBLE_BIN}. Run install_pebble.sh first."
+        return 1
+    fi
+    export PEBBLE_AUTHZREUSE=100
+    export PEBBLE_WFE_NONCEREJECT="${1:-0}"
+    # Enable real DNS validation against challtestsrv
+    export PEBBLE_VA_ALWAYS_VALID=0
+    export SSL_CERT_FILE="${PEBBLE_CERT}"
+    PEBBLE_CONFIG="${PEBBLE_DIR}/pebble-config.json"
+    echo "Starting pebble (DNS mode)..."
+    "${PEBBLE_BIN}" -config "${PEBBLE_CONFIG}" -dnsserver ":8053" &
+    PEBBLE_PID=$!
+    local max_wait=20
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if curl -sk --noproxy '*' --connect-timeout 2 "${DIRECTORY_URL}" > /dev/null 2>&1; then
+            echo "Pebble ready (PID: ${PEBBLE_PID})"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "ERROR: Pebble DNS mode failed to start"
+    cleanup_servers
+    return 1
 }
 
 # Verify a certificate contains expected issuer
