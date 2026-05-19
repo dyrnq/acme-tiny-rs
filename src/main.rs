@@ -142,8 +142,8 @@ struct Cli {
     #[arg(long = "tls-alpn-01-port", visible_alias = "tlsport")]
     tls_alpn01_port: Option<u16>,
 
-    /// DNS provider for dns-01 challenge: manual, cloudflare (cf), alibaba (ali),
-    /// aws (route53), azure, acmedns, acmeproxy, dnspod (dp), godaddy (gd),
+    /// DNS provider for dns-01 challenge: exec (script-based), manual (interactive),
+    /// cloudflare (cf), alibaba (ali), aws (route53), azure, acmedns, acmeproxy,
     /// huaweicloud (huawei), duckdns, linode (linode_v4), vultr, namecheap,
     /// desec, gandi, namesilo, porkbun, bunny (bunnycdn), ionos,
     /// tencent (tencentcloud), jdcloud (jd), netlify,

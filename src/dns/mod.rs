@@ -1,5 +1,6 @@
 /// DNS-01 challenge provider trait and built-in implementations.
 pub mod cname;
+pub mod exec;
 pub mod manual;
 pub mod cf;
 pub mod ali;
@@ -28,7 +29,7 @@ pub mod digitalocean;
 pub mod ovh;
 pub mod dnsimple;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 /// DNS-01 challenge provider trait.
 ///
@@ -47,6 +48,12 @@ pub trait DnsProvider: Send + Sync {
 /// Create a DNS provider from a provider name string.
 pub fn create_provider(name: &str) -> Result<Box<dyn DnsProvider>> {
     match name {
+        "exec" => Ok(Box::new(exec::ExecDns::new(
+            std::env::var("ACME_DNS_EXEC_PRESENT")
+                .context("ACME_DNS_EXEC_PRESENT env var not set (path to present script)")?,
+            std::env::var("ACME_DNS_EXEC_CLEAN")
+                .context("ACME_DNS_EXEC_CLEAN env var not set (path to clean script)")?,
+        ))),
         "manual" => Ok(Box::new(manual::ManualDns)),
         "cloudflare" | "cf" => Ok(Box::new(cf::CloudflareDns::new()?)),
         "alibaba" | "ali" => Ok(Box::new(ali::AlibabaDns::new()?)),
