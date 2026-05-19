@@ -584,6 +584,9 @@ pub(crate) async fn do_request(
         && !(status == reqwest::StatusCode::BAD_REQUEST
             && json.get("type").and_then(|t| t.as_str())
                 .map_or(false, |t| t == "urn:ietf:params:acme:error:badNonce"))
+        && !(status == reqwest::StatusCode::CONFLICT
+            && json.get("type").and_then(|t| t.as_str())
+                .map_or(false, |t| t == "urn:ietf:params:acme:error:alreadyReplaced"))
     {
         bail!(
             "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nResponse: {json}",
@@ -1297,7 +1300,7 @@ async fn get_crt(
         order_payload["replaces"] = serde_json::json!(cert_id);
     }
 
-    let (order, _, headers) = send_signed_request(
+    let (mut order, _, mut headers) = send_signed_request(
         &client,
         &directory.new_order,
         Some(&order_payload),
@@ -1307,6 +1310,28 @@ async fn get_crt(
         &directory,
     )
     .await?;
+
+    // If the CA says the certificate has already been replaced, retry
+    // without the "replaces" field (same approach as acme.sh / lego).
+    if order.get("type").and_then(|t| t.as_str())
+        .map_or(false, |t| t == "urn:ietf:params:acme:error:alreadyReplaced")
+    {
+        info!("Certificate already replaced, retrying without 'replaces'.");
+        order_payload.as_object_mut().and_then(|o| o.remove("replaces"));
+        let (new_order, _, new_headers) = send_signed_request(
+            &client,
+            &directory.new_order,
+            Some(&order_payload),
+            "Error creating new order (retry without replaces)",
+            signing_key,
+            &acct_location,
+            &directory,
+        )
+        .await?;
+        order = new_order;
+        headers = new_headers;
+        info!("Order created (without replaces)!");
+    }
 
     let order_location = headers
         .get("Location")
