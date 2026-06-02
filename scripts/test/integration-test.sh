@@ -715,7 +715,6 @@ run_test "TLS 1.3 dump" \
         kill \$PID 2>/dev/null
     "
 
-
 run_test "inspect subcommand --help" \
     bash -c "
         ${BINARY} inspect --help 2>/dev/null | grep -q 'domain'
@@ -1053,16 +1052,6 @@ run_test "completions subcommand (fish)" \
         grep -q 'complete' ${TMPDIR}/comp.fish
     "
 
-run_test "--ca (deprecated, falls back to letsencrypt)" \
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            --ca letsencrypt \
-            --disable-check 2>&1 | grep -q 'DEPRECATED'
-    "
-
 run_test "ed25519 account key issues certificate" \
     bash -c "
         ${BINARY} \
@@ -1206,16 +1195,6 @@ run_test "completions subcommand (fish)" \
     bash -c "
         ${BINARY} completions fish > ${TMPDIR}/comp.fish 2>/dev/null && \
         grep -q 'complete' ${TMPDIR}/comp.fish
-    "
-
-run_test "--ca (deprecated, falls back to letsencrypt)" \
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            --ca letsencrypt \
-            --disable-check 2>&1 | grep -q 'DEPRECATED'
     "
 
 run_test "ed25519 account key issues certificate" \
