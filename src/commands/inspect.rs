@@ -183,13 +183,13 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
         if !no_header {
             if lint {
                 println!(
-                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {:^25}  {}",
-                    "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Lint", "Not After"
+                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {:^25}  Not After",
+                    "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Lint"
                 );
             } else {
                 println!(
-                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  {}",
-                    "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg", "Not After"
+                    "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:^10}  Not After",
+                    "Domain", "Port", "Subject CN", "Issuer O", "Days", "SelfSig", "KeyAlg"
                 );
             }
             let sep = "-".repeat(120);

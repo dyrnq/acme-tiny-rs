@@ -31,7 +31,7 @@ impl DigitalOceanDns {
 
             let resp: serde_json::Value = self
                 .client
-                .get(&format!("{DO_API}/{root}"))
+                .get(format!("{DO_API}/{root}"))
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .send()?

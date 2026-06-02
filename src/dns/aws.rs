@@ -109,7 +109,7 @@ impl AwsRoute53Dns {
                     && part.contains(&format!("<Name>{domain}.</Name>"))
                 {
                     let id = part.split("<Id>").nth(1).and_then(|s| s.split("</Id>").next())
-                        .and_then(|s| s.split('/').last().map(|s| s.to_string()))
+                        .and_then(|s| s.split('/').next_back().map(|s| s.to_string()))
                         .ok_or_else(|| anyhow!("Zone ID not found in XML"))?;
                     return Ok(id);
                 }

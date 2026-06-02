@@ -40,7 +40,7 @@ impl JdCloudDns {
                 .header("Authorization", &self.sign("GET", &format!("/v1/regions/{}/domain?domainName={root}", self.region), ""))
                 .send()?
                 .json()?;
-            if resp["error"].is_null() && resp["result"]["data"].as_array().map_or(false, |a| !a.is_empty()) {
+            if resp["error"].is_null() && resp["result"]["data"].as_array().is_some_and(|a| !a.is_empty()) {
                 if let Some(d) = resp["result"]["data"][0].as_object() {
                     return Ok((d["domainName"].as_str().unwrap_or("").to_string(), sub, d["id"].as_u64().unwrap_or(0).to_string()));
                 }
@@ -87,7 +87,7 @@ impl DnsProvider for JdCloudDns {
             .json()?;
         if let Some(records) = resp["result"]["data"].as_array() {
             for r in records {
-                if r["hostRecord"].as_str().map_or(false, |h| h == acme_sub) && r["hostValue"].as_str() == Some(value) {
+                if r["hostRecord"].as_str().is_some_and(|h| h == acme_sub) && r["hostValue"].as_str() == Some(value) {
                     if let Some(id) = r["id"].as_u64() {
                         let _ = self.client
                             .delete(self.api_url(&format!("domain/{root}/record/{id}")))

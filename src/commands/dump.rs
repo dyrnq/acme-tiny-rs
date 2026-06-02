@@ -126,7 +126,7 @@ fn pem_encode(der: &[u8], w: &mut dyn Write) -> Result<()> {
         writeln!(w, "{}", std::str::from_utf8(chunk).unwrap())?;
     }
     // Ensure trailing newline if last line wasn't exactly 64 chars
-    if b64.len() % 64 != 0 || b64.is_empty() {
+    if !b64.len().is_multiple_of(64) || b64.is_empty() {
         // writeln already added a newline, this is fine
     }
     writeln!(w, "-----END CERTIFICATE-----")?;
