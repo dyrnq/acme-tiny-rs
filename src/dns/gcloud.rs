@@ -9,6 +9,7 @@ use std::process::Command;
 
 use crate::dns::DnsProvider;
 
+#[allow(dead_code)]
 pub struct GoogleCloudDns {
     zone_name: Option<String>,
 }

@@ -32,7 +32,7 @@ impl DnsimpleDns {
             .send()?
             .json()?;
 
-        if resp["data"]["account"].is_null() || resp["data"]["account"].as_object().map_or(true, |o| o.is_empty()) {
+        if resp["data"]["account"].is_null() || resp["data"]["account"].as_object().is_none_or(|o| o.is_empty()) {
             bail!("No account associated with this DNSimple token");
         }
 
@@ -44,7 +44,7 @@ impl DnsimpleDns {
 
     fn find_zone(&self, account_id: &str, domain: &str) -> Result<(String, String)> {
         let parts: Vec<&str> = domain.split('.').collect();
-        let mut prev_i = 1;
+        let _prev_i = 1;
 
         for i in 2..=parts.len() {
             let zone = parts[i.saturating_sub(1)..].join(".");
@@ -60,7 +60,7 @@ impl DnsimpleDns {
 
             // If no "not found" in the response, this is a valid zone
             if !resp["message"].as_str().unwrap_or("").contains("not found")
-                && resp["errors"].as_array().map_or(true, |e| e.is_empty())
+                && resp["errors"].as_array().is_none_or(|e| e.is_empty())
             {
                 return Ok((zone, sub));
             }
@@ -93,7 +93,7 @@ impl DnsProvider for DnsimpleDns {
             .send()?
             .json()?;
 
-        if resp["errors"].as_array().map_or(false, |e| !e.is_empty()) {
+        if resp["errors"].as_array().is_some_and(|e| !e.is_empty()) {
             bail!("DNSimple API error: {resp}");
         }
 

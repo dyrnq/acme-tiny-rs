@@ -1,7 +1,7 @@
 /// Gandi LiveDNS provider.
 /// Requires GANDI_LIVEDNS_KEY env var.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_gandi_livedns.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 pub struct GandiDns { key: String, client: reqwest::blocking::Client }

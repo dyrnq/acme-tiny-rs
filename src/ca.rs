@@ -211,6 +211,7 @@ impl ResolvedCA {
     }
 
     /// Get the human-readable name.
+    #[allow(dead_code)]
     pub fn name(&self) -> String {
         match self {
             ResolvedCA::Known(ca) => ca.name.to_string(),
@@ -261,7 +262,7 @@ pub fn list_presets() -> String {
 pub fn print_ca_table(no_header: bool) {
     if !no_header {
         println!();
-        println!("{:<25} {:<30} {:<8} {:<8} {}", "ID", "Name", "EAB", "Wildcard", "Notes");
+        println!("{:<25} {:<30} {:<8} {:<8} Notes", "ID", "Name", "EAB", "Wildcard");
         println!("{}", "-".repeat(120));
     }
     for ca in KNOWN_CAS {
@@ -276,8 +277,6 @@ pub fn print_ca_table(no_header: bool) {
         println!("Example: --server https://my-ca.example.com/directory");
     }
 }
-
-/// Fetch ACME directory and print raw JSON.
 
 /// Return all known CAs as a JSON array.
 pub fn cas_as_json() -> Vec<serde_json::Value> {

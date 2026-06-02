@@ -47,16 +47,11 @@ pub async fn start(domain: &str, key_auth: &str, port: u16) -> Result<tokio::tas
     info!("TLS-ALPN-01 server listening on port {port} for {domain}");
 
     Ok(tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    let acceptor = acceptor.clone();
-                    tokio::spawn(async move {
-                        let _ = acceptor.accept(stream).await;
-                    });
-                }
-                Err(_) => break,
-            }
+        while let Ok((stream, _)) = listener.accept().await {
+            let acceptor = acceptor.clone();
+            tokio::spawn(async move {
+                let _ = acceptor.accept(stream).await;
+            });
         }
     }))
 }

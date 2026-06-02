@@ -105,7 +105,7 @@ impl DnsProvider for AzureDns {
         Ok(())
     }
 
-    fn cleanup(&self, domain: &str, value: &str) -> Result<()> {
+    fn cleanup(&self, domain: &str, _value: &str) -> Result<()> {
         let token = self.get_token()?;
         let (rg, sub) = self.find_zone(domain, &token)?;
         let parts: Vec<&str> = domain.split('.').collect();

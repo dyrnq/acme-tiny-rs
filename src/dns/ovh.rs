@@ -69,7 +69,7 @@ impl OvhDns {
         use digest::Digest;
         use sha1::Sha1;
 
-        let now = std::time::SystemTime::now()
+        let _now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
@@ -150,7 +150,7 @@ impl OvhDns {
 
     fn find_zone(&self, domain: &str) -> Result<(String, String)> {
         let parts: Vec<&str> = domain.split('.').collect();
-        let mut prev_i = 1;
+        let _prev_i = 1;
 
         for i in 1..=parts.len() {
             let zone = parts[i.saturating_sub(1)..].join(".");

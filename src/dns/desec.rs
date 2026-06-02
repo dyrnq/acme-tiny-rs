@@ -1,7 +1,7 @@
 /// deSEC DNS provider.
 /// Requires DESEC_TOKEN env var.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_desec.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 pub struct DesecDns { token: String, client: reqwest::blocking::Client }

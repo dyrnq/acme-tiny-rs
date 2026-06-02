@@ -4,7 +4,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use std::io::Read;
-use x509_parser::prelude::*;
 
 /// Authority Key Identifier OID (RFC 5280 §4.2.1.1)
 const OID_AKI: &str = "2.5.29.35";
@@ -20,14 +19,14 @@ fn extract_aki_key_hash(value: &[u8]) -> Option<&[u8]> {
 
 /// Compute certID (base64url(AKI).base64url(serial)) from PEM bytes.
 pub fn cert_id_from_pem(pem_data: &[u8]) -> Result<String> {
-    let (_, pem) = x509_parser::pem::pem_to_der(pem_data)
+    let (_, pem) = x509_parser::pem::parse_x509_pem(pem_data)
         .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
     let (_, cert) = x509_parser::parse_x509_certificate(&pem.contents)
         .context("Failed to parse certificate")?;
     let aki = cert.extensions()
         .iter()
         .find(|ext| ext.oid.to_string() == OID_AKI)
-        .and_then(|ext| extract_aki_key_hash(ext.value.as_ref()).map(|s| s.to_vec()))
+        .and_then(|ext| extract_aki_key_hash(ext.value).map(|s| s.to_vec()))
         .ok_or_else(|| anyhow!("No Authority Key Identifier in certificate"))?;
     let serial = cert.raw_serial().to_vec();
     let b64 = |d: &[u8]| URL_SAFE_NO_PAD.encode(d);

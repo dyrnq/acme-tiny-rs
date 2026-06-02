@@ -1,7 +1,7 @@
 /// Vultr DNS provider.
 /// Requires VULTR_API_KEY env var.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_vultr.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 pub struct VultrDns { key: String, client: reqwest::blocking::Client }
@@ -13,7 +13,7 @@ impl VultrDns {
             let root = parts[i..].join(".");
             let r: serde_json::Value = self.client.get("https://api.vultr.com/v2/domains")
                 .header("Authorization", format!("Bearer {}", self.key)).send()?.json()?;
-            if r["domains"].as_array().map_or(false, |a| a.iter().any(|d| d["domain"].as_str() == Some(&root))) {
+            if r["domains"].as_array().is_some_and(|a| a.iter().any(|d| d["domain"].as_str() == Some(&root))) {
                 return Ok(root);
             }
         }

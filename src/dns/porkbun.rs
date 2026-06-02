@@ -1,7 +1,7 @@
 /// Porkbun DNS provider.
 /// Requires PORKBUN_API_KEY and PORKBUN_SECRET_API_KEY env vars.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_porkbun.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 pub struct PorkbunDns { key: String, secret: String, client: reqwest::blocking::Client }

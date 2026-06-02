@@ -71,24 +71,19 @@ pub async fn start(port: u16, token: &str, key_auth: &str) -> Result<tokio::task
     info!("Standalone HTTP server listening on port {port}");
 
     Ok(tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((mut stream, _)) => {
-                    let mut buf = [0u8; 512];
-                    if let Ok(Ok(n)) = tokio::time::timeout(
-                        std::time::Duration::from_secs(5),
-                        stream.read(&mut buf),
-                    ).await {
-                        let req = std::str::from_utf8(&buf[..n]).unwrap_or("");
-                        let resp = if req.starts_with(&expected_path) {
-                            response_ok.as_bytes()
-                        } else {
-                            response_404.as_bytes()
-                        };
-                        let _ = stream.write_all(resp).await;
-                    }
-                }
-                Err(_) => break,
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut buf = [0u8; 512];
+            if let Ok(Ok(n)) = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stream.read(&mut buf),
+            ).await {
+                let req = std::str::from_utf8(&buf[..n]).unwrap_or("");
+                let resp = if req.starts_with(&expected_path) {
+                    response_ok.as_bytes()
+                } else {
+                    response_404.as_bytes()
+                };
+                let _ = stream.write_all(resp).await;
             }
         }
     }))

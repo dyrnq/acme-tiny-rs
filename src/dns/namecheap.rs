@@ -1,7 +1,7 @@
 /// Namecheap DNS provider.
 /// Requires NAMECHEAP_API_KEY and NAMECHEAP_USERNAME env vars.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_namecheap.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 pub struct NamecheapDns { key: String, user: String, client: reqwest::blocking::Client }

@@ -1,7 +1,7 @@
 /// NameSilo DNS provider.
 /// Requires NAMESILO_API_KEY env var.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_namesilo.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use std::env;
 use crate::dns::DnsProvider;
 pub struct NameSiloDns { key: String, client: reqwest::blocking::Client }

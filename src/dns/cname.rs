@@ -7,7 +7,6 @@
 ///
 /// This is modeled after lego's `lookupCNAME` — zero configuration, automatic
 /// discovery, default-on, and harmless when no CNAME exists.
-
 use std::net::UdpSocket;
 
 /// Maximum CNAME chain length (matches lego's limit).
@@ -41,7 +40,7 @@ fn decode_dns_name(data: &[u8], start: usize) -> (String, usize) {
         if len & 0xC0 == 0xC0 {
             // Compression pointer
             if pos + 2 > data.len() { break; }
-            let ptr = ((len & 0x3F) as usize) << 8 | data[pos + 1] as usize;
+            let ptr = (len & 0x3F) << 8 | data[pos + 1] as usize;
             if !jumped { end = pos + 2; }
             pos = ptr;
             jumped = true;
@@ -59,10 +58,10 @@ fn decode_dns_name(data: &[u8], start: usize) -> (String, usize) {
 
 /// Build a DNS query for CNAME record.
 fn build_cname_query(fqdn: &str) -> Vec<u8> {
-    let id = (std::time::SystemTime::now()
+    let id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .subsec_nanos() as u16) & 0xFFFF;
+        .subsec_nanos() as u16;
     let name = encode_dns_name(fqdn);
     let mut query = vec![
         (id >> 8) as u8, id as u8,  // ID

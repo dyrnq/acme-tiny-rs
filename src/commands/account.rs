@@ -40,6 +40,7 @@ pub async fn update(sk: &SigningKey, du: &str, email: Option<&[String]>, cb: Opt
     println!("{}", serde_json::to_string_pretty(&info)?); Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn register(
     sk: &SigningKey, du: &str, email: Option<&[String]>, tos: bool,
     ek: Option<&str>, ehk: Option<&str>, eha: &str, cb: Option<&str>, ins: bool, v: u8,

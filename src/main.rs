@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -582,11 +581,9 @@ pub(crate) async fn do_request(
         && status != reqwest::StatusCode::CREATED
         && status != reqwest::StatusCode::NO_CONTENT
         && !(status == reqwest::StatusCode::BAD_REQUEST
-            && json.get("type").and_then(|t| t.as_str())
-                .map_or(false, |t| t == "urn:ietf:params:acme:error:badNonce"))
+            && (json.get("type").and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:badNonce")))
         && !(status == reqwest::StatusCode::CONFLICT
-            && json.get("type").and_then(|t| t.as_str())
-                .map_or(false, |t| t == "urn:ietf:params:acme:error:alreadyReplaced"))
+            && (json.get("type").and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:alreadyReplaced")))
     {
         bail!(
             "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nResponse: {json}",
@@ -620,6 +617,7 @@ pub(crate) async fn send_signed_request(
     send_signed_request_inner(client, url, payload, err_msg, signing_key, acct_location, directory, 0).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn send_signed_request_inner(
     client: &reqwest::Client,
     url: &str,
@@ -674,11 +672,10 @@ async fn send_signed_request_inner(
 
     // Handle badNonce retry (up to 100 retries like the python version)
     if result.1 == reqwest::StatusCode::BAD_REQUEST
-        && result
+        && (result
             .0
             .get("type")
-            .and_then(|t| t.as_str())
-            .map_or(false, |t| t == "urn:ietf:params:acme:error:badNonce")
+            .and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:badNonce"))
     {
         if depth >= 100 {
             bail!("Too many badNonce retries");
@@ -750,14 +747,14 @@ pub(crate) fn parse_account_key(path: &str) -> Result<SigningKey> {
 pub(crate) fn parse_account_key_bytes(pem_data: &str) -> Result<SigningKey> {
     // Detect key type from PEM header
     if pem_data.contains("RSA PRIVATE KEY") {
-        parse_rsa_key(&pem_data)
+        parse_rsa_key(pem_data)
     } else if pem_data.contains("EC PRIVATE KEY") {
-        parse_ec_key(&pem_data)
+        parse_ec_key(pem_data)
     } else if pem_data.contains("PRIVATE KEY") {
         // PKCS#8 format — try RSA first, then EC
-        parse_rsa_key(&pem_data)
-            .or_else(|_| parse_ec_key(&pem_data))
-            .or_else(|_| parse_ed25519_key(&pem_data))
+        parse_rsa_key(pem_data)
+            .or_else(|_| parse_ec_key(pem_data))
+            .or_else(|_| parse_ed25519_key(pem_data))
     } else {
         bail!("Unsupported key format")
     }
@@ -923,7 +920,7 @@ fn parse_csr(path: &str) -> Result<Vec<String>> {
             .filter(|line| !line.starts_with("-----"))
             .collect();
         STANDARD
-            .decode(&base64_body.replace(&['\n', '\r'][..], ""))
+            .decode(base64_body.replace(&['\n', '\r'][..], ""))
             .context("Failed to decode CSR PEM base64")?
     } else {
         csr_data
@@ -1003,7 +1000,7 @@ fn get_csr_der(path: &str) -> Result<Vec<u8>> {
             .filter(|line| !line.starts_with("-----"))
             .collect();
         Ok(STANDARD
-            .decode(&base64_body.replace(&['\n', '\r'][..], ""))
+            .decode(base64_body.replace(&['\n', '\r'][..], ""))
             .context("Failed to decode CSR PEM base64")?)
     } else {
         Ok(csr_data)
@@ -1055,7 +1052,7 @@ async fn get_crt(
 
     // Normalize challenge type to lowercase for case-insensitive matching
     let challenge_type = cli.challenge_type.to_lowercase();
-    let challenge_type = challenge_type.as_str();
+    let _challenge_type = challenge_type.as_str();
 
     // Compute JWK thumbprint (RFC 7638) — canonical JSON with sorted keys
     let thumbprint = {
@@ -1082,9 +1079,10 @@ async fn get_crt(
     let force_active = if cli.min_days_left.is_none() && !cli.ari { cli.force } else { false };
 
     // --- Days-based expiry gate ---
+    #[allow(clippy::unnecessary_unwrap)]
     if let Some(days) = cli.min_days_left {
         let cert_path = cli.existing_cert.as_ref().unwrap();
-        let (_, cert) = x509_parser::pem::pem_to_der(&std::fs::read(cert_path)?)
+        let (_, cert) = x509_parser::pem::parse_x509_pem(&std::fs::read(cert_path)?)
             .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
         let (_, parsed) = x509_parser::parse_x509_certificate(&cert.contents)
             .context("Failed to parse certificate")?;
@@ -1101,6 +1099,7 @@ async fn get_crt(
     }
 
     // --- ARI pre-check (RFC 9773) ---
+    #[allow(clippy::unnecessary_unwrap)]
     let cert_id_for_replaces = if cli.ari && cli.existing_cert.is_some() {
         let cert_path = cli.existing_cert.as_ref().unwrap();
         let aki_serial = crate::commands::ari::cert_id_from_file(cert_path)?;
@@ -1255,6 +1254,7 @@ async fn get_crt(
     }
 
     // Update contact if provided
+    #[allow(clippy::unnecessary_unwrap)]
     if cli.contact.is_some() {
         if let Some(ref loc) = acct_location {
             let contact_payload = serde_json::json!({
@@ -1313,8 +1313,7 @@ async fn get_crt(
 
     // If the CA says the certificate has already been replaced, retry
     // without the "replaces" field (same approach as acme.sh / lego).
-    if order.get("type").and_then(|t| t.as_str())
-        .map_or(false, |t| t == "urn:ietf:params:acme:error:alreadyReplaced")
+    if order.get("type").and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:alreadyReplaced")
     {
         info!("Certificate already replaced, retrying without 'replaces'.");
         order_payload.as_object_mut().and_then(|o| o.remove("replaces"));
@@ -1693,7 +1692,7 @@ async fn main() -> Result<()> {
     let acct_key = cli.account_key.clone();
     let acct_cb = cli.ca_bundle.clone();
     let acct_ins = cli.insecure;
-    let acct_dir = resolve_directory_url(&cli).unwrap_or_default();
+    let _acct_dir = resolve_directory_url(&cli).unwrap_or_default();
 
     // Dispatch subcommand
     if let Some(cmd) = cli.command {

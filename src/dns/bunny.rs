@@ -1,7 +1,7 @@
 /// BunnyCDN DNS provider.
 /// Requires BUNNY_API_KEY env var.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_bunny.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 pub struct BunnyDns { key: String, client: reqwest::blocking::Client }

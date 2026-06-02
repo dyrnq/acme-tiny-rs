@@ -2,7 +2,7 @@
 /// Auto-registers if no credentials; requires CNAME delegation to acme-dns server.
 /// Requires ACMEDNS_BASE_URL (default: https://auth.acme-dns.io).
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_acmedns.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 
@@ -41,7 +41,7 @@ impl AcmeDnsDns {
 }
 
 impl DnsProvider for AcmeDnsDns {
-    fn present(&self, domain: &str, value: &str) -> Result<()> {
+    fn present(&self, _domain: &str, value: &str) -> Result<()> {
         let body = serde_json::json!({"subdomain": self.subdomain, "txt": value});
         let resp: serde_json::Value = self.client
             .post(format!("{}/update", self.base_url))

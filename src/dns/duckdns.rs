@@ -2,7 +2,7 @@
 ///
 /// Requires DuckDNS_Token env var.
 /// Reference: https://github.com/acmesh-official/acme.sh/tree/master/dnsapi/dns_duckdns.sh
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::env;
 use crate::dns::DnsProvider;
 
