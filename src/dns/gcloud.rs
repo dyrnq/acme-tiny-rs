@@ -23,10 +23,18 @@ impl GoogleCloudDns {
         let output = Command::new("gcloud")
             .arg("--version")
             .output()
-            .map_err(|e| anyhow!("gcloud CLI not found: {}. Install it or use another DNS provider.", e))?;
+            .map_err(|e| {
+                anyhow!(
+                    "gcloud CLI not found: {}. Install it or use another DNS provider.",
+                    e
+                )
+            })?;
 
         if !output.status.success() {
-            bail!("gcloud CLI failed to run: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "gcloud CLI failed to run: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         Ok(Self { zone_name: None })
@@ -44,9 +52,11 @@ impl GoogleCloudDns {
                     "dns",
                     "managed-zones",
                     "list",
-                    "--project", &project,
+                    "--project",
+                    &project,
                     "--format=value(name)",
-                    "--filter", &format!("dnsName={} AND visibility=public", dns_name),
+                    "--filter",
+                    &format!("dnsName={} AND visibility=public", dns_name),
                 ])
                 .output()?;
 
@@ -71,9 +81,12 @@ impl GoogleCloudDns {
                 "dns",
                 "record-sets",
                 "list",
-                "--zone", &zone,
-                "--project", &project,
-                "--name", &record_name,
+                "--zone",
+                &zone,
+                "--project",
+                &project,
+                "--name",
+                &record_name,
                 "--type=TXT",
                 "--format=value(rrdatas)",
             ])
@@ -81,7 +94,11 @@ impl GoogleCloudDns {
 
         if output.status.success() {
             let text = String::from_utf8_lossy(&output.stdout);
-            Ok(text.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+            Ok(text
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect())
         } else {
             Ok(vec![])
         }
@@ -101,13 +118,18 @@ impl DnsProvider for GoogleCloudDns {
                 "record-sets",
                 "transaction",
                 "start",
-                "--zone", &zone,
-                "--project", &project,
+                "--zone",
+                &zone,
+                "--project",
+                &project,
             ])
             .output()?;
 
         if !output.status.success() {
-            bail!("gcloud transaction start failed: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "gcloud transaction start failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         // Remove existing records (if any)
@@ -118,20 +140,37 @@ impl DnsProvider for GoogleCloudDns {
                 "record-sets".to_string(),
                 "transaction".to_string(),
                 "remove".to_string(),
-                "--name".to_string(), record_name.clone(),
-                "--ttl".to_string(), "60".to_string(),
-                "--type".to_string(), "TXT".to_string(),
-                "--zone".to_string(), zone.clone(),
-                "--project".to_string(), project.clone(),
+                "--name".to_string(),
+                record_name.clone(),
+                "--ttl".to_string(),
+                "60".to_string(),
+                "--type".to_string(),
+                "TXT".to_string(),
+                "--zone".to_string(),
+                zone.clone(),
+                "--project".to_string(),
+                project.clone(),
                 "--".to_string(),
             ];
             args.extend(existing);
             let output = Command::new("gcloud").args(&args).output()?;
             if !output.status.success() {
                 let _ = Command::new("gcloud")
-                    .args(["dns", "record-sets", "transaction", "abort", "--zone", &zone, "--project", &project])
+                    .args([
+                        "dns",
+                        "record-sets",
+                        "transaction",
+                        "abort",
+                        "--zone",
+                        &zone,
+                        "--project",
+                        &project,
+                    ])
                     .output();
-                bail!("gcloud transaction remove failed: {}", String::from_utf8_lossy(&output.stderr));
+                bail!(
+                    "gcloud transaction remove failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         }
 
@@ -142,11 +181,16 @@ impl DnsProvider for GoogleCloudDns {
                 "record-sets",
                 "transaction",
                 "add",
-                "--name", &record_name,
-                "--ttl", "60",
-                "--type", "TXT",
-                "--zone", &zone,
-                "--project", &project,
+                "--name",
+                &record_name,
+                "--ttl",
+                "60",
+                "--type",
+                "TXT",
+                "--zone",
+                &zone,
+                "--project",
+                &project,
                 "--",
                 &format!("\"{}\"", value),
             ])
@@ -154,9 +198,21 @@ impl DnsProvider for GoogleCloudDns {
 
         if !output.status.success() {
             let _ = Command::new("gcloud")
-                .args(["dns", "record-sets", "transaction", "abort", "--zone", &zone, "--project", &project])
+                .args([
+                    "dns",
+                    "record-sets",
+                    "transaction",
+                    "abort",
+                    "--zone",
+                    &zone,
+                    "--project",
+                    &project,
+                ])
                 .output();
-            bail!("gcloud transaction add failed: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "gcloud transaction add failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         // Execute transaction
@@ -166,16 +222,24 @@ impl DnsProvider for GoogleCloudDns {
                 "record-sets",
                 "transaction",
                 "execute",
-                "--zone", &zone,
-                "--project", &project,
+                "--zone",
+                &zone,
+                "--project",
+                &project,
             ])
             .output()?;
 
         if !output.status.success() {
-            bail!("gcloud transaction execute failed: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "gcloud transaction execute failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
-        println!("[gcloud] TXT record set: _acme-challenge.{} = {}", domain, value);
+        println!(
+            "[gcloud] TXT record set: _acme-challenge.{} = {}",
+            domain, value
+        );
         Ok(())
     }
 
@@ -190,8 +254,14 @@ impl DnsProvider for GoogleCloudDns {
         // Start transaction
         let output = Command::new("gcloud")
             .args([
-                "dns", "record-sets", "transaction", "start",
-                "--zone", &zone, "--project", &project,
+                "dns",
+                "record-sets",
+                "transaction",
+                "start",
+                "--zone",
+                &zone,
+                "--project",
+                &project,
             ])
             .output()?;
 
@@ -204,7 +274,16 @@ impl DnsProvider for GoogleCloudDns {
             Ok(r) => r,
             Err(_) => {
                 let _ = Command::new("gcloud")
-                    .args(["dns", "record-sets", "transaction", "abort", "--zone", &zone, "--project", &project])
+                    .args([
+                        "dns",
+                        "record-sets",
+                        "transaction",
+                        "abort",
+                        "--zone",
+                        &zone,
+                        "--project",
+                        &project,
+                    ])
                     .output();
                 return Ok(());
             }
@@ -216,11 +295,16 @@ impl DnsProvider for GoogleCloudDns {
                 "record-sets".to_string(),
                 "transaction".to_string(),
                 "remove".to_string(),
-                "--name".to_string(), record_name.clone(),
-                "--ttl".to_string(), "60".to_string(),
-                "--type".to_string(), "TXT".to_string(),
-                "--zone".to_string(), zone.clone(),
-                "--project".to_string(), project.clone(),
+                "--name".to_string(),
+                record_name.clone(),
+                "--ttl".to_string(),
+                "60".to_string(),
+                "--type".to_string(),
+                "TXT".to_string(),
+                "--zone".to_string(),
+                zone.clone(),
+                "--project".to_string(),
+                project.clone(),
                 "--".to_string(),
             ];
             args.extend(existing);
@@ -228,17 +312,44 @@ impl DnsProvider for GoogleCloudDns {
             if output.status.success() {
                 // Execute transaction
                 let _ = Command::new("gcloud")
-                    .args(["dns", "record-sets", "transaction", "execute", "--zone", &zone, "--project", &project])
+                    .args([
+                        "dns",
+                        "record-sets",
+                        "transaction",
+                        "execute",
+                        "--zone",
+                        &zone,
+                        "--project",
+                        &project,
+                    ])
                     .output();
                 println!("[gcloud] TXT record removed: _acme-challenge.{}", domain);
             } else {
                 let _ = Command::new("gcloud")
-                    .args(["dns", "record-sets", "transaction", "abort", "--zone", &zone, "--project", &project])
+                    .args([
+                        "dns",
+                        "record-sets",
+                        "transaction",
+                        "abort",
+                        "--zone",
+                        &zone,
+                        "--project",
+                        &project,
+                    ])
                     .output();
             }
         } else {
             let _ = Command::new("gcloud")
-                .args(["dns", "record-sets", "transaction", "abort", "--zone", &zone, "--project", &project])
+                .args([
+                    "dns",
+                    "record-sets",
+                    "transaction",
+                    "abort",
+                    "--zone",
+                    &zone,
+                    "--project",
+                    &project,
+                ])
                 .output();
         }
 

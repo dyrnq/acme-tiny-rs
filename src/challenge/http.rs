@@ -21,7 +21,11 @@ fn find_port_owner(port: u16) -> Option<String> {
             // local_address is field 1 (0-indexed), format: IP:PORT
             let local = parts.get(2)?;
             let port_hex = local.split(':').nth(1)?;
-            if port_hex == hex_port { parts.get(9).map(|s| s.to_string()) } else { None }
+            if port_hex == hex_port {
+                parts.get(9).map(|s| s.to_string())
+            } else {
+                None
+            }
         })
         .next()?;
 
@@ -37,7 +41,12 @@ fn find_port_owner(port: u16) -> Option<String> {
                 let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
                     .unwrap_or_default()
                     .replace('\0', " ");
-                return Some(format!("{} (pid {}, cmdline: {})", comm.trim(), pid, cmdline.trim()));
+                return Some(format!(
+                    "{} (pid {}, cmdline: {})",
+                    comm.trim(),
+                    pid,
+                    cmdline.trim()
+                ));
             }
         }
     }
@@ -59,7 +68,8 @@ pub async fn start(port: u16, token: &str, key_auth: &str) -> Result<tokio::task
     );
     let response_404 = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+        .await
         .with_context(|| {
             if let Some(owner) = find_port_owner(port) {
                 format!("Failed to bind port {port} — already in use by {owner}")
@@ -73,10 +83,9 @@ pub async fn start(port: u16, token: &str, key_auth: &str) -> Result<tokio::task
     Ok(tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
             let mut buf = [0u8; 512];
-            if let Ok(Ok(n)) = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                stream.read(&mut buf),
-            ).await {
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), stream.read(&mut buf)).await
+            {
                 let req = std::str::from_utf8(&buf[..n]).unwrap_or("");
                 let resp = if req.starts_with(&expected_path) {
                     response_ok.as_bytes()

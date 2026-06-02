@@ -25,25 +25,63 @@ pub enum DumpFormat {
 }
 
 /// Dump the TLS certificate chain from a domain.
-pub async fn run(domain: &str, default_port: u16, output: Option<&str>, format: DumpFormat, insecure: bool) -> Result<()> {
+pub async fn run(
+    domain: &str,
+    default_port: u16,
+    output: Option<&str>,
+    format: DumpFormat,
+    insecure: bool,
+) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let config = if insecure {
-        use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+        use rustls::client::danger::{
+            HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+        };
         #[derive(Debug)]
         struct NoVerify;
         impl ServerCertVerifier for NoVerify {
-            fn verify_server_cert(&self, _: &rustls::pki_types::CertificateDer<'_>, _: &[rustls::pki_types::CertificateDer<'_>], _: &rustls::pki_types::ServerName<'_>, _: &[u8], _: rustls::pki_types::UnixTime) -> std::result::Result<ServerCertVerified, rustls::Error> { Ok(ServerCertVerified::assertion()) }
-            fn verify_tls12_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
-            fn verify_tls13_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
-            fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> { vec![rustls::SignatureScheme::RSA_PKCS1_SHA256, rustls::SignatureScheme::ECDSA_NISTP256_SHA256] }
+            fn verify_server_cert(
+                &self,
+                _: &rustls::pki_types::CertificateDer<'_>,
+                _: &[rustls::pki_types::CertificateDer<'_>],
+                _: &rustls::pki_types::ServerName<'_>,
+                _: &[u8],
+                _: rustls::pki_types::UnixTime,
+            ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+                Ok(ServerCertVerified::assertion())
+            }
+            fn verify_tls12_signature(
+                &self,
+                _: &[u8],
+                _: &rustls::pki_types::CertificateDer<'_>,
+                _: &rustls::DigitallySignedStruct,
+            ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+            fn verify_tls13_signature(
+                &self,
+                _: &[u8],
+                _: &rustls::pki_types::CertificateDer<'_>,
+                _: &rustls::DigitallySignedStruct,
+            ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+            fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+                vec![
+                    rustls::SignatureScheme::RSA_PKCS1_SHA256,
+                    rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+                ]
+            }
         }
         rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoVerify))
             .with_no_client_auth()
     } else {
-        let root_store = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let root_store = rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        };
         rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth()
@@ -65,8 +103,8 @@ pub async fn run(domain: &str, default_port: u16, output: Option<&str>, format: 
         .with_context(|| format!("TCP connection failed: {addr}"))?;
 
     // TLS handshake
-    let dns_name = DnsName::try_from(host.to_string())
-        .with_context(|| format!("Invalid hostname: {host}"))?;
+    let dns_name =
+        DnsName::try_from(host.to_string()).with_context(|| format!("Invalid hostname: {host}"))?;
     let server_name = ServerName::DnsName(dns_name);
     let tls_stream = connector
         .connect(server_name, tcp)
@@ -135,8 +173,8 @@ fn pem_encode(der: &[u8], w: &mut dyn Write) -> Result<()> {
 
 /// Human-readable certificate dump (similar to `openssl x509 -text`).
 fn text_dump(der: &[u8], index: usize, w: &mut dyn Write) -> Result<()> {
-    let (_, cert) = x509_parser::parse_x509_certificate(der)
-        .context("Failed to parse certificate")?;
+    let (_, cert) =
+        x509_parser::parse_x509_certificate(der).context("Failed to parse certificate")?;
 
     writeln!(w, "Certificate {index}")?;
     writeln!(w, "  Subject: {}", cert.subject())?;
@@ -150,16 +188,12 @@ fn text_dump(der: &[u8], index: usize, w: &mut dyn Write) -> Result<()> {
     writeln!(
         w,
         "  Validity: {}",
-        not_before
-            .to_rfc2822()
-            .unwrap_or_else(|_| "?".to_string())
+        not_before.to_rfc2822().unwrap_or_else(|_| "?".to_string())
     )?;
     writeln!(
         w,
         "            {}",
-        not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "?".to_string())
+        not_after.to_rfc2822().unwrap_or_else(|_| "?".to_string())
     )?;
 
     // Serial
@@ -171,7 +205,11 @@ fn text_dump(der: &[u8], index: usize, w: &mut dyn Write) -> Result<()> {
     writeln!(w)?;
 
     // Signature algorithm
-    writeln!(w, "  Signature Algorithm: {}", cert.signature_algorithm.algorithm)?;
+    writeln!(
+        w,
+        "  Signature Algorithm: {}",
+        cert.signature_algorithm.algorithm
+    )?;
 
     // Subject Public Key Info
     let spki = cert.public_key();

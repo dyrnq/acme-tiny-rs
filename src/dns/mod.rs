@@ -1,33 +1,33 @@
-/// DNS-01 challenge provider trait and built-in implementations.
-pub mod cname;
-pub mod exec;
-pub mod manual;
-pub mod cf;
+pub mod acmedns;
+pub mod acmeproxy;
 pub mod ali;
 pub mod aws;
 pub mod azure;
-pub mod acmedns;
-pub mod acmeproxy;
+pub mod bunny;
+pub mod cf;
+/// DNS-01 challenge provider trait and built-in implementations.
+pub mod cname;
+pub mod desec;
+pub mod digitalocean;
+pub mod dnsimple;
 pub mod dp;
+pub mod duckdns;
+pub mod exec;
+pub mod gandi;
+pub mod gcloud;
 pub mod gd;
 pub mod huawei;
-pub mod duckdns;
-pub mod linode;
-pub mod vultr;
-pub mod namecheap;
-pub mod desec;
-pub mod gandi;
-pub mod namesilo;
-pub mod porkbun;
-pub mod bunny;
 pub mod ionos;
-pub mod tencent;
 pub mod jdcloud;
+pub mod linode;
+pub mod manual;
+pub mod namecheap;
+pub mod namesilo;
 pub mod netlify;
-pub mod gcloud;
-pub mod digitalocean;
 pub mod ovh;
-pub mod dnsimple;
+pub mod porkbun;
+pub mod tencent;
+pub mod vultr;
 
 use anyhow::{bail, Context, Result};
 

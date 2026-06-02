@@ -31,29 +31,42 @@ fn decode_dns_name(data: &[u8], start: usize) -> (String, usize) {
     let mut end = 0;
 
     loop {
-        if pos >= data.len() { break; }
+        if pos >= data.len() {
+            break;
+        }
         let len = data[pos] as usize;
         if len == 0 {
-            if !jumped { end = pos + 1; }
+            if !jumped {
+                end = pos + 1;
+            }
             break;
         }
         if len & 0xC0 == 0xC0 {
             // Compression pointer
-            if pos + 2 > data.len() { break; }
+            if pos + 2 > data.len() {
+                break;
+            }
             let ptr = (len & 0x3F) << 8 | data[pos + 1] as usize;
-            if !jumped { end = pos + 2; }
+            if !jumped {
+                end = pos + 2;
+            }
             pos = ptr;
             jumped = true;
             continue;
         }
         // Normal label
         pos += 1;
-        if pos + len > data.len() { break; }
+        if pos + len > data.len() {
+            break;
+        }
         labels.push(String::from_utf8_lossy(&data[pos..pos + len]).to_lowercase());
         pos += len;
     }
 
-    (labels.join("."), if jumped { end } else { end.max(pos + 1) })
+    (
+        labels.join("."),
+        if jumped { end } else { end.max(pos + 1) },
+    )
 }
 
 /// Build a DNS query for CNAME record.
@@ -64,12 +77,18 @@ fn build_cname_query(fqdn: &str) -> Vec<u8> {
         .subsec_nanos() as u16;
     let name = encode_dns_name(fqdn);
     let mut query = vec![
-        (id >> 8) as u8, id as u8,  // ID
-        0x01, 0x00,                  // Standard query
-        0x00, 0x01,                  // QDCOUNT = 1
-        0x00, 0x00,                  // ANCOUNT = 0
-        0x00, 0x00,                  // NSCOUNT = 0
-        0x00, 0x00,                  // ARCOUNT = 0
+        (id >> 8) as u8,
+        id as u8, // ID
+        0x01,
+        0x00, // Standard query
+        0x00,
+        0x01, // QDCOUNT = 1
+        0x00,
+        0x00, // ANCOUNT = 0
+        0x00,
+        0x00, // NSCOUNT = 0
+        0x00,
+        0x00, // ARCOUNT = 0
     ];
     query.extend(&name);
     query.extend(&[0x00, 0x05]); // CNAME
@@ -79,7 +98,9 @@ fn build_cname_query(fqdn: &str) -> Vec<u8> {
 
 /// Parse CNAME from DNS response, returns Option<target_fqdn>.
 fn parse_cname_response(data: &[u8]) -> Option<String> {
-    if data.len() < 12 { return None; }
+    if data.len() < 12 {
+        return None;
+    }
     let qdcount = ((data[4] as u16) << 8) | data[5] as u16;
     let ancount = ((data[6] as u16) << 8) | data[7] as u16;
 
@@ -94,7 +115,9 @@ fn parse_cname_response(data: &[u8]) -> Option<String> {
     for _ in 0..ancount {
         let (_, next) = decode_dns_name(data, pos);
         pos = next;
-        if pos + 10 > data.len() { break; }
+        if pos + 10 > data.len() {
+            break;
+        }
         let rtype = ((data[pos] as u16) << 8) | data[pos + 1] as u16;
         let rdlen = ((data[pos + 8] as u16) << 8) | data[pos + 9] as u16;
         pos += 10;
@@ -112,7 +135,9 @@ fn parse_cname_response(data: &[u8]) -> Option<String> {
 fn lookup_cname_sync(fqdn: &str) -> Option<String> {
     let query = build_cname_query(fqdn);
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok()?;
+    socket
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .ok()?;
 
     // Try common system resolvers
     for dns_ip in &["8.8.8.8:53", "1.1.1.1:53"] {

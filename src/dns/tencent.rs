@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::dns::DnsProvider;
 use hmac::{Hmac, Mac};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -25,13 +25,17 @@ pub struct TencentDns {
 impl TencentDns {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            secret_id: env::var("Tencent_SecretId").map_err(|_| anyhow!("Tencent_SecretId required"))?,
-            secret_key: env::var("Tencent_SecretKey").map_err(|_| anyhow!("Tencent_SecretKey required"))?,
+            secret_id: env::var("Tencent_SecretId")
+                .map_err(|_| anyhow!("Tencent_SecretId required"))?,
+            secret_key: env::var("Tencent_SecretKey")
+                .map_err(|_| anyhow!("Tencent_SecretKey required"))?,
             client: reqwest::blocking::Client::new(),
         })
     }
 
-    fn sha256hex(data: &str) -> String { format!("{:x}", Sha256::digest(data.as_bytes())) }
+    fn sha256hex(data: &str) -> String {
+        format!("{:x}", Sha256::digest(data.as_bytes()))
+    }
 
     fn hmac_sign(key: &[u8], data: &str) -> Vec<u8> {
         let mut mac = HmacSha256::new_from_slice(key).expect("HMAC");
@@ -46,17 +50,52 @@ impl TencentDns {
             let d = days % 36525;
             let y = 1970 + d / 365;
             let dy = d % 365;
-            let mo: &[(u64, u64)] = &[(31,1),(59,2),(90,3),(120,4),(151,5),(181,6),(212,7),(243,8),(273,9),(304,10),(334,11),(365,12)];
-            let mut m = 1u64; let mut day = 1u64;
-            for (dm, mn) in mo { if dy < *dm { m = *mn; day = if m == 1 { dy + 1 } else { dy - mo.iter().find(|(_,x)| *x == m - 1).map(|(d,_)| *d).unwrap_or(0) + 1 }; break; } }
+            let mo: &[(u64, u64)] = &[
+                (31, 1),
+                (59, 2),
+                (90, 3),
+                (120, 4),
+                (151, 5),
+                (181, 6),
+                (212, 7),
+                (243, 8),
+                (273, 9),
+                (304, 10),
+                (334, 11),
+                (365, 12),
+            ];
+            let mut m = 1u64;
+            let mut day = 1u64;
+            for (dm, mn) in mo {
+                if dy < *dm {
+                    m = *mn;
+                    day = if m == 1 {
+                        dy + 1
+                    } else {
+                        dy - mo
+                            .iter()
+                            .find(|(_, x)| *x == m - 1)
+                            .map(|(d, _)| *d)
+                            .unwrap_or(0)
+                            + 1
+                    };
+                    break;
+                }
+            }
             format!("{y:04}-{m:02}-{day:02}")
         };
 
         let canonical_headers = format!("content-type:application/json\nhost:dnspod.tencentcloudapi.com\nx-tc-action:{action}\n");
         let signed_headers = "content-type;host;x-tc-action";
-        let canonical = format!("POST\n/\n\n{canonical_headers}\n{signed_headers}\n{}", Self::sha256hex(payload));
+        let canonical = format!(
+            "POST\n/\n\n{canonical_headers}\n{signed_headers}\n{}",
+            Self::sha256hex(payload)
+        );
         let scope = format!("{date}/{TC_SERVICE}/tc3_request");
-        let sts = format!("TC3-HMAC-SHA256\n{timestamp}\n{scope}\n{}", Self::sha256hex(&canonical));
+        let sts = format!(
+            "TC3-HMAC-SHA256\n{timestamp}\n{scope}\n{}",
+            Self::sha256hex(&canonical)
+        );
 
         let k_date = Self::hmac_sign(format!("TC3{}", self.secret_key).as_bytes(), &date);
         let k_service = Self::hmac_sign(&k_date, TC_SERVICE);
@@ -69,10 +108,14 @@ impl TencentDns {
 
     fn call_api(&self, action: &str, payload: &serde_json::Value) -> Result<serde_json::Value> {
         let payload_str = serde_json::to_string(payload)?;
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let auth = self.tc3_sign(action, &payload_str, ts);
 
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .post(TC_API)
             .header("Authorization", &auth)
             .header("Content-Type", "application/json")
@@ -85,7 +128,10 @@ impl TencentDns {
             .json()?;
 
         if let Some(err) = resp["Response"]["Error"].as_object() {
-            bail!("TencentCloud error: {}", err["Message"].as_str().unwrap_or("unknown"));
+            bail!(
+                "TencentCloud error: {}",
+                err["Message"].as_str().unwrap_or("unknown")
+            );
         }
         Ok(resp)
     }

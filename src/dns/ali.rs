@@ -26,17 +26,28 @@ impl AlibabaDns {
     pub fn new() -> Result<Self> {
         let key = env::var("Ali_Key").map_err(|_| anyhow!("Ali_Key env var required"))?;
         let secret = env::var("Ali_Secret").map_err(|_| anyhow!("Ali_Secret env var required"))?;
-        Ok(Self { key, secret, client: reqwest::blocking::Client::new() })
+        Ok(Self {
+            key,
+            secret,
+            client: reqwest::blocking::Client::new(),
+        })
     }
 
     fn nonce(&self) -> String {
-        format!("{:x}{}", 
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(),
-            std::process::id())
+        format!(
+            "{:x}{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+            std::process::id()
+        )
     }
 
     fn timestamp(&self) -> String {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
         let secs = now.as_secs();
         let h = (secs % 86400) / 3600;
         let m = (secs % 3600) / 60;
@@ -78,7 +89,10 @@ impl AlibabaDns {
         for i in 1..parts.len() {
             let root = parts[i..].join(".");
             let sub = parts[..i].join(".");
-            if self.call_api(&[("Action", "DescribeDomainRecords"), ("DomainName", &root)]).is_ok() {
+            if self
+                .call_api(&[("Action", "DescribeDomainRecords"), ("DomainName", &root)])
+                .is_ok()
+            {
                 return Ok((root, sub));
             }
         }
@@ -112,7 +126,8 @@ impl DnsProvider for AlibabaDns {
                 for r in records {
                     if r["RR"].as_str() == Some(&sub) && r["Value"].as_str() == Some(value) {
                         if let Some(id) = r["RecordId"].as_str() {
-                            let _ = self.call_api(&[("Action", "DeleteDomainRecord"), ("RecordId", id)]);
+                            let _ = self
+                                .call_api(&[("Action", "DeleteDomainRecord"), ("RecordId", id)]);
                             println!("[alibaba] TXT record removed: _acme-challenge.{domain}");
                         }
                     }
@@ -127,10 +142,11 @@ fn url_encode_upper(s: &str) -> String {
     let mut result = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => result.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                result.push(b as char)
+            }
             _ => result.push_str(&format!("%{:02X}", b)),
         }
     }
     result
 }
-

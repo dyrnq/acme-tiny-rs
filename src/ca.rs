@@ -252,7 +252,11 @@ pub fn resolve(server: &str) -> anyhow::Result<ResolvedCA> {
 pub fn list_presets() -> String {
     let mut lines = Vec::new();
     for ca in KNOWN_CAS {
-        let eab = if ca.eab_required { " [EAB required]" } else { "" };
+        let eab = if ca.eab_required {
+            " [EAB required]"
+        } else {
+            ""
+        };
         lines.push(format!("  {:<25} {}{}", ca.id, ca.name, eab));
     }
     lines.join("\n")
@@ -262,13 +266,19 @@ pub fn list_presets() -> String {
 pub fn print_ca_table(no_header: bool) {
     if !no_header {
         println!();
-        println!("{:<25} {:<30} {:<8} {:<8} Notes", "ID", "Name", "EAB", "Wildcard");
+        println!(
+            "{:<25} {:<30} {:<8} {:<8} Notes",
+            "ID", "Name", "EAB", "Wildcard"
+        );
         println!("{}", "-".repeat(120));
     }
     for ca in KNOWN_CAS {
         let eab = if ca.eab_required { "Yes" } else { "No" };
         let wildcard = if ca.wildcard_supported { "Yes" } else { "No" };
-        println!("{:<25} {:<30} {:<8} {:<8} {}", ca.id, ca.name, eab, wildcard, ca.notes);
+        println!(
+            "{:<25} {:<30} {:<8} {:<8} {}",
+            ca.id, ca.name, eab, wildcard, ca.notes
+        );
     }
     if !no_header {
         println!();
@@ -280,15 +290,20 @@ pub fn print_ca_table(no_header: bool) {
 
 /// Return all known CAs as a JSON array.
 pub fn cas_as_json() -> Vec<serde_json::Value> {
-    KNOWN_CAS.iter().map(|ca| serde_json::json!({
-        "id": ca.id,
-        "name": ca.name,
-        "directory_url": ca.directory_url,
-        "website": ca.website,
-        "eab_required": ca.eab_required,
-        "wildcard_supported": ca.wildcard_supported,
-        "notes": ca.notes,
-    })).collect()
+    KNOWN_CAS
+        .iter()
+        .map(|ca| {
+            serde_json::json!({
+                "id": ca.id,
+                "name": ca.name,
+                "directory_url": ca.directory_url,
+                "website": ca.website,
+                "eab_required": ca.eab_required,
+                "wildcard_supported": ca.wildcard_supported,
+                "notes": ca.notes,
+            })
+        })
+        .collect()
 }
 
 pub async fn inspect_ca(server: &str, verbose: u8, insecure: bool) -> anyhow::Result<()> {
@@ -300,13 +315,20 @@ pub async fn inspect_ca(server: &str, verbose: u8, insecure: bool) -> anyhow::Re
         eprintln!("[inspect-ca] GET {url}");
     }
     let client = if insecure {
-        reqwest::Client::builder().danger_accept_invalid_certs(true).build()?
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()?
     } else {
         reqwest::Client::new()
     };
-    let resp = client.get(&url)
-        .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
-        .send().await?;
+    let resp = client
+        .get(&url)
+        .header(
+            "User-Agent",
+            concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")),
+        )
+        .send()
+        .await?;
     if verbose >= 1 {
         eprintln!("[inspect-ca] Response: HTTP {}", resp.status());
     }

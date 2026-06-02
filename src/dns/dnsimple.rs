@@ -32,7 +32,11 @@ impl DnsimpleDns {
             .send()?
             .json()?;
 
-        if resp["data"]["account"].is_null() || resp["data"]["account"].as_object().is_none_or(|o| o.is_empty()) {
+        if resp["data"]["account"].is_null()
+            || resp["data"]["account"]
+                .as_object()
+                .is_none_or(|o| o.is_empty())
+        {
             bail!("No account associated with this DNSimple token");
         }
 

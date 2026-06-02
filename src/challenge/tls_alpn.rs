@@ -4,9 +4,9 @@
 
 use anyhow::{Context, Result};
 use log::info;
-use rcgen::{CertificateParams, KeyPair, CustomExtension};
-use rustls::ServerConfig;
+use rcgen::{CertificateParams, CustomExtension, KeyPair};
 use rustls::pki_types::pem::PemObject;
+use rustls::ServerConfig;
 use sha2::Digest;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -21,10 +21,12 @@ pub async fn start(domain: &str, key_auth: &str, port: u16) -> Result<tokio::tas
     let key_pair = KeyPair::generate()?;
     let mut params = CertificateParams::new(vec![domain.clone()])?;
     params.distinguished_name = rcgen::DistinguishedName::new();
-    params.custom_extensions.push(CustomExtension::from_oid_content(
-        &[1, 3, 6, 1, 5, 5, 7, 1, 31],
-        digest.to_vec(),
-    ));
+    params
+        .custom_extensions
+        .push(CustomExtension::from_oid_content(
+            &[1, 3, 6, 1, 5, 5, 7, 1, 31],
+            digest.to_vec(),
+        ));
 
     let cert = params.self_signed(&key_pair)?;
     let cert_pem = cert.pem();
@@ -41,7 +43,8 @@ pub async fn start(domain: &str, key_auth: &str, port: u16) -> Result<tokio::tas
     config.alpn_protocols = vec![alpn_protocol];
 
     let acceptor = TlsAcceptor::from(Arc::new(config));
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
+        .await
         .with_context(|| format!("Failed to bind port {port} for TLS-ALPN-01 server"))?;
 
     info!("TLS-ALPN-01 server listening on port {port} for {domain}");

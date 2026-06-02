@@ -17,15 +17,20 @@ pub struct JdCloudDns {
 impl JdCloudDns {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            key_id: env::var("JD_ACCESS_KEY_ID").map_err(|_| anyhow!("JD_ACCESS_KEY_ID required"))?,
-            key_secret: env::var("JD_ACCESS_KEY_SECRET").map_err(|_| anyhow!("JD_ACCESS_KEY_SECRET required"))?,
+            key_id: env::var("JD_ACCESS_KEY_ID")
+                .map_err(|_| anyhow!("JD_ACCESS_KEY_ID required"))?,
+            key_secret: env::var("JD_ACCESS_KEY_SECRET")
+                .map_err(|_| anyhow!("JD_ACCESS_KEY_SECRET required"))?,
             region: env::var("JD_REGION").unwrap_or_else(|_| "cn-north-1".to_string()),
             client: reqwest::blocking::Client::new(),
         })
     }
 
     fn api_url(&self, path: &str) -> String {
-        format!("https://clouddnsservice.jdcloud-api.com/v1/regions/{}/{path}", self.region)
+        format!(
+            "https://clouddnsservice.jdcloud-api.com/v1/regions/{}/{path}",
+            self.region
+        )
     }
 
     fn get_root(&self, domain: &str) -> Result<(String, String, String)> {
@@ -33,16 +38,32 @@ impl JdCloudDns {
         for i in 1..parts.len() {
             let root = parts[i..].join(".");
             let sub = parts[..i].join(".");
-            let resp: serde_json::Value = self.client
+            let resp: serde_json::Value = self
+                .client
                 .get(self.api_url(&format!("domain?domainName={root}")))
                 .header("X-JDCLOUD-DATE", chrono_like_date())
                 .header("X-JDCLOUD-NONCE", &uuid_like())
-                .header("Authorization", &self.sign("GET", &format!("/v1/regions/{}/domain?domainName={root}", self.region), ""))
+                .header(
+                    "Authorization",
+                    &self.sign(
+                        "GET",
+                        &format!("/v1/regions/{}/domain?domainName={root}", self.region),
+                        "",
+                    ),
+                )
                 .send()?
                 .json()?;
-            if resp["error"].is_null() && resp["result"]["data"].as_array().is_some_and(|a| !a.is_empty()) {
+            if resp["error"].is_null()
+                && resp["result"]["data"]
+                    .as_array()
+                    .is_some_and(|a| !a.is_empty())
+            {
                 if let Some(d) = resp["result"]["data"][0].as_object() {
-                    return Ok((d["domainName"].as_str().unwrap_or("").to_string(), sub, d["id"].as_u64().unwrap_or(0).to_string()));
+                    return Ok((
+                        d["domainName"].as_str().unwrap_or("").to_string(),
+                        sub,
+                        d["id"].as_u64().unwrap_or(0).to_string(),
+                    ));
                 }
             }
         }
@@ -66,32 +87,68 @@ impl DnsProvider for JdCloudDns {
             "ttl": 120,
         });
         let path = format!("domain/{root}/record");
-        let resp = self.client
+        let resp = self
+            .client
             .post(self.api_url(&path))
-            .header("Authorization", &self.sign("POST", &format!("/v1/regions/{}/domain/{root}/record", self.region), &serde_json::to_string(&body).unwrap_or_default()))
+            .header(
+                "Authorization",
+                &self.sign(
+                    "POST",
+                    &format!("/v1/regions/{}/domain/{root}/record", self.region),
+                    &serde_json::to_string(&body).unwrap_or_default(),
+                ),
+            )
             .header("Content-Type", "application/json")
             .json(&body)
             .send()?;
         let r: serde_json::Value = resp.json()?;
-        if r["error"].is_null() { Ok(()) } else { bail!("JD Cloud error: {r}") }
+        if r["error"].is_null() {
+            Ok(())
+        } else {
+            bail!("JD Cloud error: {r}")
+        }
     }
 
     fn cleanup(&self, domain: &str, value: &str) -> Result<()> {
         let (root, sub, _domain_id) = self.get_root(domain)?;
         let acme_sub = format!("_acme-challenge.{sub}");
         // List records, find matching, delete
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .get(self.api_url(&format!("domain/{root}/record?pageSize=100")))
-            .header("Authorization", &self.sign("GET", &format!("/v1/regions/{}/domain/{root}/record?pageSize=100", self.region), ""))
+            .header(
+                "Authorization",
+                &self.sign(
+                    "GET",
+                    &format!(
+                        "/v1/regions/{}/domain/{root}/record?pageSize=100",
+                        self.region
+                    ),
+                    "",
+                ),
+            )
             .send()?
             .json()?;
         if let Some(records) = resp["result"]["data"].as_array() {
             for r in records {
-                if r["hostRecord"].as_str().is_some_and(|h| h == acme_sub) && r["hostValue"].as_str() == Some(value) {
+                if r["hostRecord"].as_str().is_some_and(|h| h == acme_sub)
+                    && r["hostValue"].as_str() == Some(value)
+                {
                     if let Some(id) = r["id"].as_u64() {
-                        let _ = self.client
+                        let _ = self
+                            .client
                             .delete(self.api_url(&format!("domain/{root}/record/{id}")))
-                            .header("Authorization", &self.sign("DELETE", &format!("/v1/regions/{}/domain/{root}/record/{id}", self.region), ""))
+                            .header(
+                                "Authorization",
+                                &self.sign(
+                                    "DELETE",
+                                    &format!(
+                                        "/v1/regions/{}/domain/{root}/record/{id}",
+                                        self.region
+                                    ),
+                                    "",
+                                ),
+                            )
                             .send();
                     }
                 }
@@ -101,5 +158,9 @@ impl DnsProvider for JdCloudDns {
     }
 }
 
-fn chrono_like_date() -> String { "20260101T000000Z".into() }
-fn uuid_like() -> String { "acme-tiny-rs-jdcloud-nonce".into() }
+fn chrono_like_date() -> String {
+    "20260101T000000Z".into()
+}
+fn uuid_like() -> String {
+    "acme-tiny-rs-jdcloud-nonce".into()
+}

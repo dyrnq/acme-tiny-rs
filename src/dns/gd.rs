@@ -19,7 +19,11 @@ impl GoDaddyDns {
     pub fn new() -> Result<Self> {
         let key = env::var("GD_Key").map_err(|_| anyhow!("GD_Key env var required"))?;
         let secret = env::var("GD_Secret").map_err(|_| anyhow!("GD_Secret env var required"))?;
-        Ok(Self { key, secret, client: reqwest::blocking::Client::new() })
+        Ok(Self {
+            key,
+            secret,
+            client: reqwest::blocking::Client::new(),
+        })
     }
 
     fn auth_headers(&self) -> String {
@@ -32,23 +36,36 @@ impl GoDaddyDns {
             let root = parts[i..].join(".");
             let sub = parts[..i].join(".");
             let url = format!("{GD_API}/domains/{root}");
-            let resp = self.client.get(&url)
+            let resp = self
+                .client
+                .get(&url)
                 .header("Authorization", self.auth_headers())
                 .send()?;
-            if resp.status().is_success() { return Ok((root, sub)); }
+            if resp.status().is_success() {
+                return Ok((root, sub));
+            }
         }
         bail!("Domain not found in GoDaddy: {domain}");
     }
 
     fn get_existing_records(&self, domain: &str, subdomain: &str) -> Result<Vec<String>> {
         let url = format!("{GD_API}/domains/{domain}/records/TXT/{subdomain}");
-        let resp = self.client.get(&url)
+        let resp = self
+            .client
+            .get(&url)
             .header("Authorization", self.auth_headers())
             .send()?;
-        if resp.status().as_u16() == 404 { return Ok(vec![]); }
-        if !resp.status().is_success() { bail!("GoDaddy API error"); }
+        if resp.status().as_u16() == 404 {
+            return Ok(vec![]);
+        }
+        if !resp.status().is_success() {
+            bail!("GoDaddy API error");
+        }
         let records: Vec<serde_json::Value> = resp.json()?;
-        Ok(records.iter().filter_map(|r| r["data"].as_str().map(|s| s.to_string())).collect())
+        Ok(records
+            .iter()
+            .filter_map(|r| r["data"].as_str().map(|s| s.to_string()))
+            .collect())
     }
 }
 
@@ -63,14 +80,21 @@ impl DnsProvider for GoDaddyDns {
             return Ok(());
         }
         values.push(value.to_string());
-        let body: Vec<serde_json::Value> = values.iter().map(|v| serde_json::json!({"data": v})).collect();
+        let body: Vec<serde_json::Value> = values
+            .iter()
+            .map(|v| serde_json::json!({"data": v}))
+            .collect();
         let url = format!("{GD_API}/domains/{root}/records/TXT/{fqdn}");
-        let resp = self.client.put(&url)
+        let resp = self
+            .client
+            .put(&url)
             .header("Authorization", self.auth_headers())
             .header("Content-Type", "application/json")
             .json(&body)
             .send()?;
-        if !resp.status().is_success() { bail!("GoDaddy API error: {}", resp.text().unwrap_or_default()); }
+        if !resp.status().is_success() {
+            bail!("GoDaddy API error: {}", resp.text().unwrap_or_default());
+        }
         println!("[godaddy] TXT record set: _acme-challenge.{domain} = {value}");
         Ok(())
     }
@@ -78,14 +102,27 @@ impl DnsProvider for GoDaddyDns {
     fn cleanup(&self, domain: &str, value: &str) -> Result<()> {
         let (root, sub) = self.get_root_domain(domain)?;
         let fqdn = format!("{sub}.{root}");
-        let values: Vec<String> = self.get_existing_records(&root, &fqdn).unwrap_or_default()
-            .into_iter().filter(|v| v != value).collect();
+        let values: Vec<String> = self
+            .get_existing_records(&root, &fqdn)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| v != value)
+            .collect();
         let url = format!("{GD_API}/domains/{root}/records/TXT/{fqdn}");
         if values.is_empty() {
-            let _ = self.client.delete(&url).header("Authorization", self.auth_headers()).send();
+            let _ = self
+                .client
+                .delete(&url)
+                .header("Authorization", self.auth_headers())
+                .send();
         } else {
-            let body: Vec<serde_json::Value> = values.iter().map(|v| serde_json::json!({"data": v})).collect();
-            let _ = self.client.put(&url)
+            let body: Vec<serde_json::Value> = values
+                .iter()
+                .map(|v| serde_json::json!({"data": v}))
+                .collect();
+            let _ = self
+                .client
+                .put(&url)
                 .header("Authorization", self.auth_headers())
                 .header("Content-Type", "application/json")
                 .json(&body)

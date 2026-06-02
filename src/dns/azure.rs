@@ -31,12 +31,24 @@ impl AzureDns {
         if let Ok(tok) = env::var("AZUREDNS_BEARERTOKEN") {
             return Ok(tok);
         }
-        let tenant = self.tenant_id.as_deref().ok_or_else(|| anyhow!("AZUREDNS_TENANTID required"))?;
-        let app = self.app_id.as_deref().ok_or_else(|| anyhow!("AZUREDNS_APPID required"))?;
-        let secret = self.client_secret.as_deref().ok_or_else(|| anyhow!("AZUREDNS_CLIENTSECRET required"))?;
+        let tenant = self
+            .tenant_id
+            .as_deref()
+            .ok_or_else(|| anyhow!("AZUREDNS_TENANTID required"))?;
+        let app = self
+            .app_id
+            .as_deref()
+            .ok_or_else(|| anyhow!("AZUREDNS_APPID required"))?;
+        let secret = self
+            .client_secret
+            .as_deref()
+            .ok_or_else(|| anyhow!("AZUREDNS_CLIENTSECRET required"))?;
 
-        let resp: serde_json::Value = self.client
-            .post(format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"))
+        let resp: serde_json::Value = self
+            .client
+            .post(format!(
+                "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+            ))
             .form(&[
                 ("grant_type", "client_credentials"),
                 ("client_id", app),
@@ -45,7 +57,9 @@ impl AzureDns {
             ])
             .send()?
             .json()?;
-        resp["access_token"].as_str().map(|s| s.to_string())
+        resp["access_token"]
+            .as_str()
+            .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Failed to get Azure token: {resp}"))
     }
 
@@ -60,13 +74,16 @@ impl AzureDns {
                 "https://management.azure.com/subscriptions/{}/providers/Microsoft.Network/dnsZones/{}?api-version=2018-05-01",
                 self.subscription_id, root
             );
-            let resp = self.client.get(&url)
+            let resp = self
+                .client
+                .get(&url)
                 .header("Authorization", format!("Bearer {token}"))
                 .send()?;
             if resp.status().is_success() {
                 let zone: serde_json::Value = resp.json()?;
                 // Resource group is in the zone id: .../resourceGroups/{rg}/...
-                let rg = zone["id"].as_str()
+                let rg = zone["id"]
+                    .as_str()
                     .and_then(|id| id.split("resourceGroups/").nth(1))
                     .and_then(|s| s.split('/').next())
                     .unwrap_or(&root);
@@ -83,8 +100,11 @@ impl DnsProvider for AzureDns {
         let (rg, sub) = self.find_zone(domain, &token)?;
         let parts: Vec<&str> = domain.split('.').collect();
         let root = parts[1..].join(".");
-        let record_name = if sub.is_empty() { "_acme-challenge".to_string() }
-            else { format!("_acme-challenge.{sub}") };
+        let record_name = if sub.is_empty() {
+            "_acme-challenge".to_string()
+        } else {
+            format!("_acme-challenge.{sub}")
+        };
 
         let body = serde_json::json!({
             "properties": { "TTL": 60, "TXTRecords": [{"value": [value]}] }
@@ -93,7 +113,9 @@ impl DnsProvider for AzureDns {
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
             self.subscription_id, rg, root, record_name
         );
-        let resp = self.client.put(&url)
+        let resp = self
+            .client
+            .put(&url)
             .header("Authorization", format!("Bearer {token}"))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -110,14 +132,19 @@ impl DnsProvider for AzureDns {
         let (rg, sub) = self.find_zone(domain, &token)?;
         let parts: Vec<&str> = domain.split('.').collect();
         let root = parts[1..].join(".");
-        let record_name = if sub.is_empty() { "_acme-challenge".to_string() }
-            else { format!("_acme-challenge.{sub}") };
+        let record_name = if sub.is_empty() {
+            "_acme-challenge".to_string()
+        } else {
+            format!("_acme-challenge.{sub}")
+        };
 
         let url = format!(
             "https://management.azure.com/subscriptions/{}/resourceGroups/{}/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
             self.subscription_id, rg, root, record_name
         );
-        let resp = self.client.delete(&url)
+        let resp = self
+            .client
+            .delete(&url)
             .header("Authorization", format!("Bearer {token}"))
             .send()?;
         if resp.status().is_success() || resp.status().as_u16() == 204 {

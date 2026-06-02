@@ -46,12 +46,15 @@ impl HuaweiCloudDns {
                 "scope": { "domain": { "name": self.domain_name } }
             }
         });
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{IAM_API}/v3/auth/tokens"))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()?;
-        let token = response.headers().get("X-Subject-Token")
+        let token = response
+            .headers()
+            .get("X-Subject-Token")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("HuaweiCloud: no token in response"))?;
@@ -62,14 +65,17 @@ impl HuaweiCloudDns {
         let parts: Vec<&str> = domain.split('.').collect();
         for i in 1..parts.len() {
             let root = parts[i..].join(".");
-            let resp: serde_json::Value = self.client
+            let resp: serde_json::Value = self
+                .client
                 .get(format!("{DNS_API}/v2/zones?name={root}"))
                 .header("X-Auth-Token", token)
                 .send()?
                 .json()?;
             if let Some(zones) = resp["zones"].as_array() {
                 if let Some(zone) = zones.first() {
-                    return zone["id"].as_str().map(|s| s.to_string())
+                    return zone["id"]
+                        .as_str()
+                        .map(|s| s.to_string())
                         .ok_or_else(|| anyhow!("Zone ID not found"));
                 }
             }
@@ -78,12 +84,16 @@ impl HuaweiCloudDns {
     }
 
     fn get_recordset_id(&self, token: &str, zone_id: &str, name: &str) -> Result<Option<String>> {
-        let resp: serde_json::Value = self.client
-            .get(format!("{DNS_API}/v2/zones/{zone_id}/recordsets?name={name}&type=TXT"))
+        let resp: serde_json::Value = self
+            .client
+            .get(format!(
+                "{DNS_API}/v2/zones/{zone_id}/recordsets?name={name}&type=TXT"
+            ))
             .header("X-Auth-Token", token)
             .send()?
             .json()?;
-        Ok(resp["recordsets"].as_array()
+        Ok(resp["recordsets"]
+            .as_array()
             .and_then(|a| a.first())
             .and_then(|r| r["id"].as_str().map(|s| s.to_string())))
     }
@@ -97,7 +107,8 @@ impl DnsProvider for HuaweiCloudDns {
 
         // Delete existing recordset if present
         if let Some(id) = self.get_recordset_id(&token, &zone_id, &record_name)? {
-            let _ = self.client
+            let _ = self
+                .client
                 .delete(format!("{DNS_API}/v2/zones/{zone_id}/recordsets/{id}"))
                 .header("X-Auth-Token", &token)
                 .send();
@@ -109,7 +120,8 @@ impl DnsProvider for HuaweiCloudDns {
             "records": [format!("\"{value}\"")],
             "ttl": 60,
         });
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{DNS_API}/v2/zones/{zone_id}/recordsets"))
             .header("X-Auth-Token", &token)
             .header("Content-Type", "application/json")
@@ -127,7 +139,8 @@ impl DnsProvider for HuaweiCloudDns {
         let zone_id = self.get_zone_id(&token, domain)?;
         let record_name = format!("_acme-challenge.{domain}.");
         if let Ok(Some(id)) = self.get_recordset_id(&token, &zone_id, &record_name) {
-            let _ = self.client
+            let _ = self
+                .client
                 .delete(format!("{DNS_API}/v2/zones/{zone_id}/recordsets/{id}"))
                 .header("X-Auth-Token", &token)
                 .send();

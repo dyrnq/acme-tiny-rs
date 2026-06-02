@@ -14,7 +14,10 @@ pub struct ExecDns {
 
 impl ExecDns {
     pub fn new(present_script: String, clean_script: String) -> Self {
-        Self { present_script, clean_script }
+        Self {
+            present_script,
+            clean_script,
+        }
     }
 }
 

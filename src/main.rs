@@ -7,20 +7,20 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use clap::{Parser, Subcommand, ValueHint};
 use log::{info, LevelFilter};
+use p256::ecdsa::SigningKey as P256SigningKey;
+use p256::SecretKey as P256SecretKey;
+use p384::ecdsa::SigningKey as P384SigningKey;
+use p384::SecretKey as P384SecretKey;
 use rsa::pkcs1::DecodeRsaPrivateKey;
+use rsa::pkcs1v15;
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::traits::PublicKeyParts;
-use rsa::{RsaPrivateKey};
-use rsa::pkcs1v15;
-use signature::{Signer, SignatureEncoding};
-use p256::ecdsa::SigningKey as P256SigningKey;
-use p384::ecdsa::SigningKey as P384SigningKey;
-use p256::SecretKey as P256SecretKey;
-use p384::SecretKey as P384SecretKey;
+use rsa::RsaPrivateKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use signature::{SignatureEncoding, Signer};
+use x509_parser::extensions::{GeneralName, ParsedExtension};
 use x509_parser::prelude::FromDer;
-use x509_parser::extensions::{ParsedExtension, GeneralName};
 
 use std::io::{BufWriter, Write};
 use std::sync::{Mutex, OnceLock};
@@ -57,11 +57,11 @@ macro_rules! log_request {
 const DEFAULT_SERVER: &str = "letsencrypt";
 const USER_AGENT: &str = concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION"));
 
-mod dns;
-mod hook;
+mod ca;
 mod challenge;
 mod commands;
-mod ca;
+mod dns;
+mod hook;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -175,7 +175,11 @@ struct Cli {
     profile: Option<String>,
 
     /// Force issuance (skip ARI/renew-before check). Default true for backward compatibility.
-    #[arg(long = "force", visible_alias = "force-renewal", default_value_t = true)]
+    #[arg(
+        long = "force",
+        visible_alias = "force-renewal",
+        default_value_t = true
+    )]
     force: bool,
 
     /// Check ARI renewal window before issuing (requires --existing-cert)
@@ -537,7 +541,11 @@ pub(crate) async fn do_request(
     url: &str,
     data: Option<Vec<u8>>,
     err_msg: &str,
-) -> Result<(serde_json::Value, reqwest::StatusCode, reqwest::header::HeaderMap)> {
+) -> Result<(
+    serde_json::Value,
+    reqwest::StatusCode,
+    reqwest::header::HeaderMap,
+)> {
     let data_str = data
         .as_ref()
         .map(|d| String::from_utf8_lossy(d).to_string());
@@ -581,9 +589,11 @@ pub(crate) async fn do_request(
         && status != reqwest::StatusCode::CREATED
         && status != reqwest::StatusCode::NO_CONTENT
         && !(status == reqwest::StatusCode::BAD_REQUEST
-            && (json.get("type").and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:badNonce")))
+            && (json.get("type").and_then(|t| t.as_str())
+                == Some("urn:ietf:params:acme:error:badNonce")))
         && !(status == reqwest::StatusCode::CONFLICT
-            && (json.get("type").and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:alreadyReplaced")))
+            && (json.get("type").and_then(|t| t.as_str())
+                == Some("urn:ietf:params:acme:error:alreadyReplaced")))
     {
         bail!(
             "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nResponse: {json}",
@@ -600,9 +610,11 @@ pub(crate) async fn do_request(
 
 pub(crate) async fn get_nonce(client: &reqwest::Client, directory: &Directory) -> Result<String> {
     let (_, _, headers) = do_request(client, &directory.new_nonce, None, "nonce").await?;
-    Ok(headers.get("Replay-Nonce")
+    Ok(headers
+        .get("Replay-Nonce")
         .ok_or_else(|| anyhow!("Missing Replay-Nonce header"))?
-        .to_str()?.to_string())
+        .to_str()?
+        .to_string())
 }
 
 pub(crate) async fn send_signed_request(
@@ -613,8 +625,22 @@ pub(crate) async fn send_signed_request(
     signing_key: &SigningKey,
     acct_location: &Option<String>,
     directory: &Directory,
-) -> Result<(serde_json::Value, reqwest::StatusCode, reqwest::header::HeaderMap)> {
-    send_signed_request_inner(client, url, payload, err_msg, signing_key, acct_location, directory, 0).await
+) -> Result<(
+    serde_json::Value,
+    reqwest::StatusCode,
+    reqwest::header::HeaderMap,
+)> {
+    send_signed_request_inner(
+        client,
+        url,
+        payload,
+        err_msg,
+        signing_key,
+        acct_location,
+        directory,
+        0,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -627,7 +653,11 @@ async fn send_signed_request_inner(
     acct_location: &Option<String>,
     directory: &Directory,
     depth: u32,
-) -> Result<(serde_json::Value, reqwest::StatusCode, reqwest::header::HeaderMap)> {
+) -> Result<(
+    serde_json::Value,
+    reqwest::StatusCode,
+    reqwest::header::HeaderMap,
+)> {
     let payload64 = match payload {
         None => String::new(),
         Some(p) => b64(serde_json::to_string(p).unwrap().as_bytes()),
@@ -672,16 +702,21 @@ async fn send_signed_request_inner(
 
     // Handle badNonce retry (up to 100 retries like the python version)
     if result.1 == reqwest::StatusCode::BAD_REQUEST
-        && (result
-            .0
-            .get("type")
-            .and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:badNonce"))
+        && (result.0.get("type").and_then(|t| t.as_str())
+            == Some("urn:ietf:params:acme:error:badNonce"))
     {
         if depth >= 100 {
             bail!("Too many badNonce retries");
         }
         return Box::pin(send_signed_request_inner(
-            client, url, payload, err_msg, signing_key, acct_location, directory, depth + 1,
+            client,
+            url,
+            payload,
+            err_msg,
+            signing_key,
+            acct_location,
+            directory,
+            depth + 1,
         ))
         .await;
     }
@@ -718,7 +753,13 @@ async fn poll_until_not(
         first = false;
 
         let (res, _, _) = send_signed_request(
-            client, url, None, err_msg, signing_key, acct_location, directory,
+            client,
+            url,
+            None,
+            err_msg,
+            signing_key,
+            acct_location,
+            directory,
         )
         .await?;
         result = res;
@@ -787,7 +828,8 @@ fn parse_rsa_key(pem_data: &str) -> Result<SigningKey> {
 fn parse_ec_key(pem_data: &str) -> Result<SigningKey> {
     // Handle multi-block PEM (e.g., openssl ecparam -genkey outputs EC PARAMETERS + EC PRIVATE KEY)
     let blocks = extract_pem_blocks(pem_data);
-    let last_error = || anyhow!("Failed to parse EC private key (tried P-256 and P-384, SEC1 and PKCS#8)");
+    let last_error =
+        || anyhow!("Failed to parse EC private key (tried P-256 and P-384, SEC1 and PKCS#8)");
 
     for block in &blocks {
         // Try P-256 first, then P-384 — both SEC1 and PKCS#8
@@ -817,7 +859,10 @@ fn build_ec_p256_key(secret: P256SecretKey) -> Result<SigningKey> {
         "x": b64(point.x().ok_or_else(|| anyhow!("Missing EC x coordinate"))?),
         "y": b64(point.y().ok_or_else(|| anyhow!("Missing EC y coordinate"))?),
     });
-    Ok(SigningKey::EcdsaP256 { key: signing_key, jwk })
+    Ok(SigningKey::EcdsaP256 {
+        key: signing_key,
+        jwk,
+    })
 }
 
 fn build_ec_p384_key(secret: P384SecretKey) -> Result<SigningKey> {
@@ -830,7 +875,10 @@ fn build_ec_p384_key(secret: P384SecretKey) -> Result<SigningKey> {
         "x": b64(point.x().ok_or_else(|| anyhow!("Missing EC x coordinate"))?),
         "y": b64(point.y().ok_or_else(|| anyhow!("Missing EC y coordinate"))?),
     });
-    Ok(SigningKey::EcdsaP384 { key: signing_key, jwk })
+    Ok(SigningKey::EcdsaP384 {
+        key: signing_key,
+        jwk,
+    })
 }
 
 fn parse_ed25519_key(pem_data: &str) -> Result<SigningKey> {
@@ -843,7 +891,10 @@ fn parse_ed25519_key(pem_data: &str) -> Result<SigningKey> {
                 "kty": "OKP",
                 "x": b64(verifying_key.as_bytes()),
             });
-            return Ok(SigningKey::Ed25519 { key: signing_key, jwk });
+            return Ok(SigningKey::Ed25519 {
+                key: signing_key,
+                jwk,
+            });
         }
     }
     bail!("Failed to parse Ed25519 private key (PKCS#8)")
@@ -907,14 +958,12 @@ fn canonical_jwk_json(jwk: &serde_json::Value) -> Result<String> {
 
 fn parse_csr(path: &str) -> Result<Vec<String>> {
     info!("Parsing CSR...");
-    let csr_data = fs::read(path)
-        .with_context(|| format!("Error loading CSR file: {path}"))?;
+    let csr_data = fs::read(path).with_context(|| format!("Error loading CSR file: {path}"))?;
 
     // Try PEM first, then raw DER
     let csr_der = if csr_data.starts_with(b"-----") {
         // PEM format - extract the base64 body
-        let pem_str = std::str::from_utf8(&csr_data)
-            .context("CSR PEM is not valid UTF-8")?;
+        let pem_str = std::str::from_utf8(&csr_data).context("CSR PEM is not valid UTF-8")?;
         let base64_body: String = pem_str
             .lines()
             .filter(|line| !line.starts_with("-----"))
@@ -927,9 +976,8 @@ fn parse_csr(path: &str) -> Result<Vec<String>> {
     };
 
     // Parse CSR DER with x509-parser
-    let (_, csr) =
-        x509_parser::certification_request::X509CertificationRequest::from_der(&csr_der)
-            .map_err(|e| anyhow!("Failed to parse CSR DER: {e}"))?;
+    let (_, csr) = x509_parser::certification_request::X509CertificationRequest::from_der(&csr_der)
+        .map_err(|e| anyhow!("Failed to parse CSR DER: {e}"))?;
 
     let mut domains: Vec<String> = Vec::new();
 
@@ -957,11 +1005,15 @@ fn parse_csr(path: &str) -> Result<Vec<String>> {
                         }
                         GeneralName::IPAddress(ip) => {
                             let ip_str = match ip.len() {
-                                4 => std::net::IpAddr::V4(std::net::Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3])).to_string(),
+                                4 => std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                                    ip[0], ip[1], ip[2], ip[3],
+                                ))
+                                .to_string(),
                                 16 => {
                                     let mut bytes = [0u8; 16];
                                     bytes.copy_from_slice(ip);
-                                    std::net::IpAddr::V6(std::net::Ipv6Addr::from(bytes)).to_string()
+                                    std::net::IpAddr::V6(std::net::Ipv6Addr::from(bytes))
+                                        .to_string()
                                 }
                                 _ => continue,
                             };
@@ -990,8 +1042,7 @@ fn parse_csr(path: &str) -> Result<Vec<String>> {
 // ---------------------------------------------------------------------------
 
 fn get_csr_der(path: &str) -> Result<Vec<u8>> {
-    let csr_data = fs::read(path)
-        .with_context(|| format!("Error loading CSR file: {path}"))?;
+    let csr_data = fs::read(path).with_context(|| format!("Error loading CSR file: {path}"))?;
 
     if csr_data.starts_with(b"-----") {
         let pem_str = std::str::from_utf8(&csr_data).context("CSR PEM is not valid UTF-8")?;
@@ -1014,16 +1065,20 @@ fn get_csr_der(path: &str) -> Result<Vec<u8>> {
 fn build_http_client(cli: &Cli) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder();
 
-    if let Some(t) = cli.connect_timeout { builder = builder.connect_timeout(Duration::from_secs(t)); }
-    if let Some(t) = cli.timeout { builder = builder.timeout(Duration::from_secs(t)); }
+    if let Some(t) = cli.connect_timeout {
+        builder = builder.connect_timeout(Duration::from_secs(t));
+    }
+    if let Some(t) = cli.timeout {
+        builder = builder.timeout(Duration::from_secs(t));
+    }
 
     if cli.insecure {
         builder = builder.danger_accept_invalid_certs(true);
     } else {
         // Support SSL_CERT_FILE env var (for pebble tests) and --ca-bundle flag
         if let Some(ref path) = cli.ca_bundle {
-            let cert_pem = fs::read(path)
-                .with_context(|| format!("Error reading CA bundle: {path}"))?;
+            let cert_pem =
+                fs::read(path).with_context(|| format!("Error reading CA bundle: {path}"))?;
             let cert = reqwest::tls::Certificate::from_pem(&cert_pem)
                 .context("Failed to parse CA certificate")?;
             builder = builder.add_root_certificate(cert);
@@ -1043,11 +1098,7 @@ fn build_http_client(cli: &Cli) -> Result<reqwest::Client> {
 // Main ACME flow
 // ---------------------------------------------------------------------------
 
-async fn get_crt(
-    cli: &Cli,
-    signing_key: &SigningKey,
-    domains: &[String],
-) -> Result<String> {
+async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Result<String> {
     let client = build_http_client(cli)?;
 
     // Normalize challenge type to lowercase for case-insensitive matching
@@ -1076,7 +1127,11 @@ async fn get_crt(
         serde_json::from_value(dir_json).context("Failed to parse directory response")?;
 
     // When --renew-before or --ari is active, the gate applies regardless of --force default
-    let force_active = if cli.min_days_left.is_none() && !cli.ari { cli.force } else { false };
+    let force_active = if cli.min_days_left.is_none() && !cli.ari {
+        cli.force
+    } else {
+        false
+    };
 
     // --- Days-based expiry gate ---
     #[allow(clippy::unnecessary_unwrap)]
@@ -1090,10 +1145,14 @@ async fn get_crt(
         let not_after = parsed.tbs_certificate.validity.not_after;
         let expiry_secs = not_after.timestamp();
         let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
         let remaining_days = (expiry_secs - now_secs) / 86400;
         if remaining_days > days as i64 && !force_active {
-            info!("Certificate valid for {remaining_days} days (> {days} days). Skipping issuance.");
+            info!(
+                "Certificate valid for {remaining_days} days (> {days} days). Skipping issuance."
+            );
             return Ok(String::new());
         }
     }
@@ -1103,23 +1162,30 @@ async fn get_crt(
     let cert_id_for_replaces = if cli.ari && cli.existing_cert.is_some() {
         let cert_path = cli.existing_cert.as_ref().unwrap();
         let aki_serial = crate::commands::ari::cert_id_from_file(cert_path)?;
-        let renewal_url = directory.renewal_info.as_deref()
-            .unwrap_or("/renewalInfo"); // fallback, unlikely for ARI-enabled CAs
+        let renewal_url = directory.renewal_info.as_deref().unwrap_or("/renewalInfo"); // fallback, unlikely for ARI-enabled CAs
         let url = if renewal_url.starts_with("http") {
             format!("{renewal_url}/{aki_serial}")
         } else {
-            let dir_url = reqwest::Url::parse(&dir_url)
-                .context("Invalid directory URL")?;
-            format!("{}://{}{}/{}/{}",
+            let dir_url = reqwest::Url::parse(&dir_url).context("Invalid directory URL")?;
+            format!(
+                "{}://{}{}/{}/{}",
                 dir_url.scheme(),
                 dir_url.host_str().unwrap_or(""),
-                if let Some(port) = dir_url.port() { format!(":{port}") } else { String::new() },
+                if let Some(port) = dir_url.port() {
+                    format!(":{port}")
+                } else {
+                    String::new()
+                },
                 renewal_url.trim_matches('/'),
-                aki_serial)
+                aki_serial
+            )
         };
-        let resp = client.get(&url)
+        let resp = client
+            .get(&url)
             .header("User-Agent", USER_AGENT)
-            .send().await.context("Failed to query ARI endpoint")?;
+            .send()
+            .await
+            .context("Failed to query ARI endpoint")?;
         if resp.status() == 200 {
             let ari_info: serde_json::Value = resp.json().await?;
             let start = ari_info["suggestedWindow"]["start"].as_str();
@@ -1128,18 +1194,26 @@ async fn get_crt(
             if start.is_some() && end.is_some() {
                 // Parse RFC3339: "2026-07-15T06:53:25Z"
                 let now_secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
                 let parse_rfc3339 = |ts: &str| -> i64 {
-                    ts.trim_end_matches('Z').replace('T', " ")
-                        .split(' ').next().map(|d| {
+                    ts.trim_end_matches('Z')
+                        .replace('T', " ")
+                        .split(' ')
+                        .next()
+                        .map(|d| {
                             let p: Vec<&str> = d.split('-').collect();
                             if p.len() == 3 {
                                 let y: i64 = p[0].parse().unwrap_or(1970);
                                 let m: u32 = p[1].parse().unwrap_or(1);
                                 let d: u32 = p[2].parse().unwrap_or(1);
                                 ((y - 1970) * 365 + m as i64 * 30 + d as i64) * 86400
-                            } else { 0 }
-                        }).unwrap_or(0)
+                            } else {
+                                0
+                            }
+                        })
+                        .unwrap_or(0)
                 };
                 let w_start = start.map(parse_rfc3339).unwrap_or(0);
                 let w_end = end.map(parse_rfc3339).unwrap_or(0);
@@ -1182,7 +1256,8 @@ async fn get_crt(
         let payload64 = b64(jwk_json.as_bytes());
         let signing_input = format!("{protected64}.{payload64}");
 
-        let decoded_key = URL_SAFE_NO_PAD.decode(hmac_key.as_bytes())
+        let decoded_key = URL_SAFE_NO_PAD
+            .decode(hmac_key.as_bytes())
             .context("EAB HMAC key is not valid base64url")?;
         use hmac::{Hmac, Mac};
         let sig: Vec<u8> = match cli.eab_hmac_alg.as_str() {
@@ -1275,10 +1350,7 @@ async fn get_crt(
                     .iter()
                     .filter_map(|c| c.as_str().map(|s| s.to_string()))
                     .collect();
-                info!(
-                    "Updated contact details:\n{}",
-                    contact_lines.join("\n")
-                );
+                info!("Updated contact details:\n{}", contact_lines.join("\n"));
             }
         }
     }
@@ -1288,7 +1360,11 @@ async fn get_crt(
     let identifiers: Vec<serde_json::Value> = domains
         .iter()
         .map(|d| {
-            let id_type = if d.parse::<std::net::IpAddr>().is_ok() { "ip" } else { "dns" };
+            let id_type = if d.parse::<std::net::IpAddr>().is_ok() {
+                "ip"
+            } else {
+                "dns"
+            };
             serde_json::json!({"type": id_type, "value": d})
         })
         .collect();
@@ -1313,10 +1389,13 @@ async fn get_crt(
 
     // If the CA says the certificate has already been replaced, retry
     // without the "replaces" field (same approach as acme.sh / lego).
-    if order.get("type").and_then(|t| t.as_str()) == Some("urn:ietf:params:acme:error:alreadyReplaced")
+    if order.get("type").and_then(|t| t.as_str())
+        == Some("urn:ietf:params:acme:error:alreadyReplaced")
     {
         info!("Certificate already replaced, retrying without 'replaces'.");
-        order_payload.as_object_mut().and_then(|o| o.remove("replaces"));
+        order_payload
+            .as_object_mut()
+            .and_then(|o| o.remove("replaces"));
         let (new_order, _, new_headers) = send_signed_request(
             &client,
             &directory.new_order,
@@ -1400,7 +1479,10 @@ async fn get_crt(
         let keyauthorization = format!("{cleaned_token}.{thumbprint}");
 
         // Pre-compute DNS challenge info if needed (available for cleanup after poll)
-        let dns_cleanup_info: Option<(String, String)> = if challenge_type == "dns-01" || challenge_type == "dns-persist-01" || challenge_type == "dns-account-01" {
+        let dns_cleanup_info: Option<(String, String)> = if challenge_type == "dns-01"
+            || challenge_type == "dns-persist-01"
+            || challenge_type == "dns-account-01"
+        {
             let txt_value = if challenge_type == "dns-account-01" {
                 // dns-account-01 (draft): TXT = SHA256(thumbprint), no token
                 crate::b64(&sha2::Sha256::digest(thumbprint.as_bytes()))
@@ -1416,12 +1498,16 @@ async fn get_crt(
                     format!("_acme-challenge.{alias}")
                 }
             } else {
-                dns::cname::resolve_challenge_domain(&domain).await.trim_end_matches('.').to_string()
+                dns::cname::resolve_challenge_domain(&domain)
+                    .await
+                    .trim_end_matches('.')
+                    .to_string()
             };
             if effective_domain != domain {
                 log::info!(
                     "DNS challenge delegated from {} -> {}",
-                    domain, effective_domain
+                    domain,
+                    effective_domain
                 );
             }
             dns::create_provider(&cli.dns_provider)?.present(&effective_domain, &txt_value)?;
@@ -1440,55 +1526,57 @@ async fn get_crt(
 
         if challenge_type == "tls-alpn-01" {
             let port = cli.tls_alpn01_port.unwrap_or(443);
-            _standalone_server = Some(challenge::tls_alpn::start(&domain, &keyauthorization, port).await?);
+            _standalone_server =
+                Some(challenge::tls_alpn::start(&domain, &keyauthorization, port).await?);
             info!("TLS-ALPN-01 server started on port {port} for {domain}");
         } else if challenge_type == "http-01" {
             if cli.standalone {
                 let port = cli.http01_port.unwrap_or(80);
-                _standalone_server = Some(challenge::http::start(port, &cleaned_token, &keyauthorization).await?);
+                _standalone_server =
+                    Some(challenge::http::start(port, &cleaned_token, &keyauthorization).await?);
                 info!("Standalone HTTP server started on port {port} for {domain}");
             } else {
-                let wellknown_path = Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
-                fs::write(&wellknown_path, &keyauthorization)
-                    .with_context(|| format!("Failed to write challenge file: {:?}", wellknown_path))?;
+                let wellknown_path =
+                    Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
+                fs::write(&wellknown_path, &keyauthorization).with_context(|| {
+                    format!("Failed to write challenge file: {:?}", wellknown_path)
+                })?;
 
                 if !cli.disable_check {
-                let check_port_str = cli
-                    .check_port
-                    .map(|p| format!(":{p}"))
-                    .unwrap_or_default();
-                let wellknown_url = format!(
+                    let check_port_str =
+                        cli.check_port.map(|p| format!(":{p}")).unwrap_or_default();
+                    let wellknown_url = format!(
                     "http://{domain}{check_port_str}/.well-known/acme-challenge/{cleaned_token}"
                 );
-                match client
-                    .get(&wellknown_url)
-                    .header("User-Agent", USER_AGENT)
-                    .send()
-                    .await
-                {
-                    Ok(resp) => {
-                        let body_text = resp.text().await.unwrap_or_default();
-                        if body_text != keyauthorization {
-                            let _ = fs::remove_file(&wellknown_path);
-                            bail!(
+                    match client
+                        .get(&wellknown_url)
+                        .header("User-Agent", USER_AGENT)
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => {
+                            let body_text = resp.text().await.unwrap_or_default();
+                            if body_text != keyauthorization {
+                                let _ = fs::remove_file(&wellknown_path);
+                                bail!(
                                 "Wrote file to {}, but couldn't download {}: unexpected content",
                                 wellknown_path.display(),
                                 wellknown_url
                             );
+                            }
                         }
-                    }
-                    Err(e) => {
-                        let _ = fs::remove_file(&wellknown_path);
-                        bail!(
-                            "Wrote file to {}, but couldn't download {}: {}",
-                            wellknown_path.display(),
-                            wellknown_url,
-                            e
-                        );
+                        Err(e) => {
+                            let _ = fs::remove_file(&wellknown_path);
+                            bail!(
+                                "Wrote file to {}, but couldn't download {}: {}",
+                                wellknown_path.display(),
+                                wellknown_url,
+                                e
+                            );
+                        }
                     }
                 }
             }
-        }
         } else if challenge_type == "dns-01" || challenge_type == "dns-persist-01" {
             // DNS challenge already handled above
         } else {
@@ -1522,7 +1610,8 @@ async fn get_crt(
 
         // Clean up challenge (file or DNS) — always runs, success or failure
         if challenge_type == "http-01" {
-            let wellknown_path = Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
+            let wellknown_path =
+                Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
             let _ = fs::remove_file(&wellknown_path);
         }
         // http-standalone / tls-alpn-01: cleanup is automatic — server handle drops here
@@ -1542,7 +1631,11 @@ async fn get_crt(
 
     // Finalize the order with CSR
     info!("Signing certificate...");
-    let csr_der = get_csr_der(cli.csr.as_deref().ok_or_else(|| anyhow!("--csr is required"))?)?;
+    let csr_der = get_csr_der(
+        cli.csr
+            .as_deref()
+            .ok_or_else(|| anyhow!("--csr is required"))?,
+    )?;
     let finalize_payload = serde_json::json!({
         "csr": b64(&csr_der),
     });
@@ -1582,14 +1675,8 @@ async fn get_crt(
         .as_str()
         .ok_or_else(|| anyhow!("No certificate URL in order"))?;
 
-    let certificate_pem = download_certificate(
-        &client,
-        cert_url,
-        signing_key,
-        &acct_location,
-        &directory,
-    )
-    .await?;
+    let certificate_pem =
+        download_certificate(&client, cert_url, signing_key, &acct_location, &directory).await?;
 
     info!("Certificate signed!");
 
@@ -1655,7 +1742,10 @@ async fn download_certificate(
         bail!("Certificate download failed: HTTP {status}");
     }
 
-    let body = resp.text().await.context("Failed to read certificate response")?;
+    let body = resp
+        .text()
+        .await
+        .context("Failed to read certificate response")?;
     Ok(body)
 }
 
@@ -1697,23 +1787,84 @@ async fn main() -> Result<()> {
     // Dispatch subcommand
     if let Some(cmd) = cli.command {
         match cmd {
-            Commands::Account { action, verbose, server, directory_url, .. } => {
-                let key = acct_key.as_deref()
+            Commands::Account {
+                action,
+                verbose,
+                server,
+                directory_url,
+                ..
+            } => {
+                let key = acct_key
+                    .as_deref()
                     .ok_or_else(|| anyhow!("--account-key is required for account commands"))?;
                 let sk = parse_account_key(key)?;
-                let dir = directory_url
-                    .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_default());
-                if verbose >= 1 { eprintln!("[account] Server: {dir}"); }
+                let dir = directory_url.unwrap_or_else(|| {
+                    ca::resolve(&server)
+                        .ok()
+                        .map(|r| r.directory_url())
+                        .unwrap_or_default()
+                });
+                if verbose >= 1 {
+                    eprintln!("[account] Server: {dir}");
+                }
                 return match action {
-                    AccountAction::Show => commands::account::show(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose).await,
-                    AccountAction::Update { email } => commands::account::update(&sk, &dir, email.as_deref(), acct_cb.as_deref(), acct_ins, verbose).await,
-                    AccountAction::Register { email, agree_tos, eab_kid, eab_hmac_key, eab_hmac_alg } => commands::account::register(
-                        &sk, &dir, email.as_deref(), agree_tos,
-                        eab_kid.as_deref(), eab_hmac_key.as_deref(), &eab_hmac_alg,
-                        acct_cb.as_deref(), acct_ins, verbose,
-                    ).await,
-                    AccountAction::Unregister => commands::account::unregister(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose).await,
-                    AccountAction::ChangeKey { new_key } => commands::account::change_key(&sk, &dir, &new_key, acct_cb.as_deref(), acct_ins, verbose).await,
+                    AccountAction::Show => {
+                        commands::account::show(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose)
+                            .await
+                    }
+                    AccountAction::Update { email } => {
+                        commands::account::update(
+                            &sk,
+                            &dir,
+                            email.as_deref(),
+                            acct_cb.as_deref(),
+                            acct_ins,
+                            verbose,
+                        )
+                        .await
+                    }
+                    AccountAction::Register {
+                        email,
+                        agree_tos,
+                        eab_kid,
+                        eab_hmac_key,
+                        eab_hmac_alg,
+                    } => {
+                        commands::account::register(
+                            &sk,
+                            &dir,
+                            email.as_deref(),
+                            agree_tos,
+                            eab_kid.as_deref(),
+                            eab_hmac_key.as_deref(),
+                            &eab_hmac_alg,
+                            acct_cb.as_deref(),
+                            acct_ins,
+                            verbose,
+                        )
+                        .await
+                    }
+                    AccountAction::Unregister => {
+                        commands::account::unregister(
+                            &sk,
+                            &dir,
+                            acct_cb.as_deref(),
+                            acct_ins,
+                            verbose,
+                        )
+                        .await
+                    }
+                    AccountAction::ChangeKey { new_key } => {
+                        commands::account::change_key(
+                            &sk,
+                            &dir,
+                            &new_key,
+                            acct_cb.as_deref(),
+                            acct_ins,
+                            verbose,
+                        )
+                        .await
+                    }
                 };
             }
             Commands::Completions { shell } => {
@@ -1732,11 +1883,26 @@ async fn main() -> Result<()> {
             }
             Commands::Thumbprint { account_key } => return commands::thumbprint::run(&account_key),
             Commands::Version => return commands::version::run(),
-            Commands::Ari { cert, directory_url, server, insecure, verbose } => {
-                let dir_url = directory_url
-                    .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_else(|| {
-                        ca::KNOWN_CAS.iter().find(|c| c.id == "letsencrypt").unwrap().directory_url.to_string()
-                    }));
+            Commands::Ari {
+                cert,
+                directory_url,
+                server,
+                insecure,
+                verbose,
+            } => {
+                let dir_url = directory_url.unwrap_or_else(|| {
+                    ca::resolve(&server)
+                        .ok()
+                        .map(|r| r.directory_url())
+                        .unwrap_or_else(|| {
+                            ca::KNOWN_CAS
+                                .iter()
+                                .find(|c| c.id == "letsencrypt")
+                                .unwrap()
+                                .directory_url
+                                .to_string()
+                        })
+                });
                 return commands::ari::run(&cert, &dir_url, insecure, verbose).await;
             }
             Commands::ListCa { json, no_header } => {
@@ -1748,52 +1914,118 @@ async fn main() -> Result<()> {
                 }
                 return Ok(());
             }
-            Commands::InspectCa { server, verbose, insecure } => {
+            Commands::InspectCa {
+                server,
+                verbose,
+                insecure,
+            } => {
                 return ca::inspect_ca(&server, verbose, insecure).await;
             }
-            Commands::Inspect { domains, port, json, insecure, lint, no_header } => {
-                return commands::inspect::run(&domains, port, json, insecure, lint, no_header).await;
+            Commands::Inspect {
+                domains,
+                port,
+                json,
+                insecure,
+                lint,
+                no_header,
+            } => {
+                return commands::inspect::run(&domains, port, json, insecure, lint, no_header)
+                    .await;
             }
-            Commands::Dump { domain, port, output, format, insecure } => {
-                return commands::dump::run(&domain, port, output.as_deref(), format, insecure).await;
+            Commands::Dump {
+                domain,
+                port,
+                output,
+                format,
+                insecure,
+            } => {
+                return commands::dump::run(&domain, port, output.as_deref(), format, insecure)
+                    .await;
             }
-            Commands::Revoke { cert, account_key, directory_url, server, reason, ca_bundle, insecure } => {
-                let dir_url = directory_url
-                    .unwrap_or_else(|| ca::resolve(&server).ok().map(|r| r.directory_url()).unwrap_or_else(|| {
-                        ca::KNOWN_CAS.iter().find(|c| c.id == "letsencrypt").unwrap().directory_url.to_string()
-                    }));
-                return commands::revoke::run(&cert, &account_key, &dir_url, reason, ca_bundle.as_deref(), insecure).await;
+            Commands::Revoke {
+                cert,
+                account_key,
+                directory_url,
+                server,
+                reason,
+                ca_bundle,
+                insecure,
+            } => {
+                let dir_url = directory_url.unwrap_or_else(|| {
+                    ca::resolve(&server)
+                        .ok()
+                        .map(|r| r.directory_url())
+                        .unwrap_or_else(|| {
+                            ca::KNOWN_CAS
+                                .iter()
+                                .find(|c| c.id == "letsencrypt")
+                                .unwrap()
+                                .directory_url
+                                .to_string()
+                        })
+                });
+                return commands::revoke::run(
+                    &cert,
+                    &account_key,
+                    &dir_url,
+                    reason,
+                    ca_bundle.as_deref(),
+                    insecure,
+                )
+                .await;
             }
         }
     }
 
     // Parse account key — supports RSA (PKCS#1/PKCS#8), ECDSA P-256/P-384 (SEC1/PKCS#8)
-    let signing_key = parse_account_key(cli.account_key.as_deref().ok_or_else(|| anyhow!("--account-key is required"))?)?;
+    let signing_key = parse_account_key(
+        cli.account_key
+            .as_deref()
+            .ok_or_else(|| anyhow!("--account-key is required"))?,
+    )?;
 
     // Parse CSR (replaces: openssl req -in csr -noout -text)
-    let domains = parse_csr(cli.csr.as_deref().ok_or_else(|| anyhow!("--csr is required"))?)?;
+    let domains = parse_csr(
+        cli.csr
+            .as_deref()
+            .ok_or_else(|| anyhow!("--csr is required"))?,
+    )?;
 
     // Wildcard domains require dns-01 challenge (RFC 8555 §8.4)
     let has_wildcard = domains.iter().any(|d| d.starts_with("*."));
     let challenge_type = cli.challenge_type.to_lowercase();
-    let is_dns_challenge = challenge_type == "dns-01" || challenge_type == "dns-persist-01" || challenge_type == "dns-account-01";
+    let is_dns_challenge = challenge_type == "dns-01"
+        || challenge_type == "dns-persist-01"
+        || challenge_type == "dns-account-01";
     if has_wildcard && !is_dns_challenge {
         bail!(
             "Wildcard domain requires --challenge-type dns-01.\n\
              Wildcard domains found: {}\n\
              Add: --challenge-type dns-01 [--dns-provider <provider>]",
-            domains.iter().filter(|d| d.starts_with("*.")).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            domains
+                .iter()
+                .filter(|d| d.starts_with("*."))
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
     // IP addresses cannot use DNS challenge (RFC 8738)
-    let has_ip = domains.iter().any(|d| d.parse::<std::net::IpAddr>().is_ok());
+    let has_ip = domains
+        .iter()
+        .any(|d| d.parse::<std::net::IpAddr>().is_ok());
     if has_ip && is_dns_challenge {
         bail!(
             "IP addresses require http-01 or tls-alpn-01 challenge.\n\
              IP addresses found: {}\n\
              Use: --challenge-type http-01",
-            domains.iter().filter(|d| d.parse::<std::net::IpAddr>().is_ok()).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            domains
+                .iter()
+                .filter(|d| d.parse::<std::net::IpAddr>().is_ok())
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
@@ -1823,8 +2055,7 @@ async fn main() -> Result<()> {
         let tmp = format!("{path}.tmp-{}", std::process::id());
         std::fs::write(&tmp, &certificate)
             .with_context(|| format!("Failed to write certificate to {tmp}"))?;
-        std::fs::rename(&tmp, path)
-            .with_context(|| format!("Failed to rename {tmp} to {path}"))?;
+        std::fs::rename(&tmp, path).with_context(|| format!("Failed to rename {tmp} to {path}"))?;
         info!("Certificate written to {path}");
     } else {
         print!("{certificate}");
@@ -1945,7 +2176,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("ec.key");
         std::process::Command::new("openssl")
-            .args(["genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out"])
+            .args([
+                "genpkey",
+                "-algorithm",
+                "EC",
+                "-pkeyopt",
+                "ec_paramgen_curve:P-256",
+                "-out",
+            ])
             .arg(&key_path)
             .output()
             .unwrap();
@@ -2001,7 +2239,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key_path = dir.path().join("ec.key");
         std::process::Command::new("openssl")
-            .args(["genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out"])
+            .args([
+                "genpkey",
+                "-algorithm",
+                "EC",
+                "-pkeyopt",
+                "ec_paramgen_curve:P-256",
+                "-out",
+            ])
             .arg(&key_path)
             .output()
             .unwrap();

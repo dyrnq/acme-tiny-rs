@@ -31,25 +31,64 @@ struct CertInfo {
 }
 
 /// Check TLS certificates for one or more domains.
-pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bool, lint: bool, no_header: bool) -> Result<()> {
+pub async fn run(
+    domains: &[String],
+    default_port: u16,
+    json: bool,
+    insecure: bool,
+    lint: bool,
+    no_header: bool,
+) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let config = if insecure {
-        use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+        use rustls::client::danger::{
+            HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+        };
         #[derive(Debug)]
         struct NoVerify;
         impl ServerCertVerifier for NoVerify {
-            fn verify_server_cert(&self, _: &rustls::pki_types::CertificateDer<'_>, _: &[rustls::pki_types::CertificateDer<'_>], _: &ServerName<'_>, _: &[u8], _: rustls::pki_types::UnixTime) -> std::result::Result<ServerCertVerified, rustls::Error> { Ok(ServerCertVerified::assertion()) }
-            fn verify_tls12_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
-            fn verify_tls13_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
-            fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> { vec![rustls::SignatureScheme::RSA_PKCS1_SHA256, rustls::SignatureScheme::ECDSA_NISTP256_SHA256] }
+            fn verify_server_cert(
+                &self,
+                _: &rustls::pki_types::CertificateDer<'_>,
+                _: &[rustls::pki_types::CertificateDer<'_>],
+                _: &ServerName<'_>,
+                _: &[u8],
+                _: rustls::pki_types::UnixTime,
+            ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+                Ok(ServerCertVerified::assertion())
+            }
+            fn verify_tls12_signature(
+                &self,
+                _: &[u8],
+                _: &rustls::pki_types::CertificateDer<'_>,
+                _: &rustls::DigitallySignedStruct,
+            ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+            fn verify_tls13_signature(
+                &self,
+                _: &[u8],
+                _: &rustls::pki_types::CertificateDer<'_>,
+                _: &rustls::DigitallySignedStruct,
+            ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+            fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+                vec![
+                    rustls::SignatureScheme::RSA_PKCS1_SHA256,
+                    rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+                ]
+            }
         }
         rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoVerify))
             .with_no_client_auth()
     } else {
-        let root_store = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let root_store = rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        };
         rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth()
@@ -135,12 +174,8 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
         let not_before = cert.validity().not_before;
         let not_after = cert.validity().not_after;
 
-        let not_before_str = not_before
-            .to_rfc2822()
-            .unwrap_or_else(|_| "-".to_string());
-        let not_after_str = not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "-".to_string());
+        let not_before_str = not_before.to_rfc2822().unwrap_or_else(|_| "-".to_string());
+        let not_after_str = not_after.to_rfc2822().unwrap_or_else(|_| "-".to_string());
 
         let not_after_sec = not_after.timestamp();
         let days_left = (not_after_sec - now) / 86400;
@@ -158,7 +193,11 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
 
         let self_signed = subject_cn == issuer_o && subject_cn != "-";
 
-        let warnings = if lint { lint_cert(&cert, now) } else { Vec::new() };
+        let warnings = if lint {
+            lint_cert(&cert, now)
+        } else {
+            Vec::new()
+        };
 
         results.push(CertInfo {
             domain: host,
@@ -198,7 +237,11 @@ pub async fn run(domains: &[String], default_port: u16, json: bool, insecure: bo
 
         for r in &results {
             let self_sig = if r.self_signed { "YES" } else { "no" };
-            let lint_col = if r.warnings.is_empty() { "OK" } else { &r.warnings[0] };
+            let lint_col = if r.warnings.is_empty() {
+                "OK"
+            } else {
+                &r.warnings[0]
+            };
             if lint {
                 println!(
                     "{:<20} {:>5}  {:<15}  {:<15}  {:>4}  {:>8}  {:>10}  {:<25}  {}",
@@ -244,9 +287,15 @@ fn lint_cert(cert: &x509_parser::certificate::X509Certificate<'_>, now: i64) -> 
     let not_before = cert.validity().not_before.timestamp();
     let not_after = cert.validity().not_after.timestamp();
 
-    if now < not_before { w.push("Not yet valid (notBefore is in the future)".into()); }
-    if now > not_after { w.push("EXPIRED — notAfter has passed".into()); }
-    if not_after - now < 86400 * 30 { w.push("Expires in less than 30 days".into()); }
+    if now < not_before {
+        w.push("Not yet valid (notBefore is in the future)".into());
+    }
+    if now > not_after {
+        w.push("EXPIRED — notAfter has passed".into());
+    }
+    if not_after - now < 86400 * 30 {
+        w.push("Expires in less than 30 days".into());
+    }
 
     let sig_alg = format!("{:?}", cert.signature_algorithm.algorithm);
     if sig_alg.to_lowercase().contains("sha1") {
@@ -256,11 +305,16 @@ fn lint_cert(cert: &x509_parser::certificate::X509Certificate<'_>, now: i64) -> 
     let key_alg = format!("{:?}", cert.public_key().algorithm);
     if key_alg.to_lowercase().contains("rsa") {
         let bits = cert.public_key().raw.len() * 8;
-        if bits < 2048 { w.push(format!("RSA key too small: {bits} bits (min 2048)")); }
+        if bits < 2048 {
+            w.push(format!("RSA key too small: {bits} bits (min 2048)"));
+        }
     }
 
     if cert.subject().iter_common_name().next().is_none()
-        && cert.extensions().iter().all(|e| !format!("{:?}", e.oid).contains("subjectAltName"))
+        && cert
+            .extensions()
+            .iter()
+            .all(|e| !format!("{:?}", e.oid).contains("subjectAltName"))
     {
         w.push("No Subject CN or SAN — may be rejected by browsers".into());
     }

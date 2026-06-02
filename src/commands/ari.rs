@@ -10,20 +10,29 @@ const OID_AKI: &str = "2.5.29.35";
 
 /// Strip DER wrappers from AKI extension value to get raw key hash.
 fn extract_aki_key_hash(value: &[u8]) -> Option<&[u8]> {
-    let off = if value.first() == Some(&0x30) { 2 } else { return None; };
-    if off >= value.len() { return None; }
-    if value.get(off) != Some(&0x80) { return None; }
+    let off = if value.first() == Some(&0x30) {
+        2
+    } else {
+        return None;
+    };
+    if off >= value.len() {
+        return None;
+    }
+    if value.get(off) != Some(&0x80) {
+        return None;
+    }
     let len = *value.get(off + 1)? as usize;
-    value.get(off + 2 .. off + 2 + len)
+    value.get(off + 2..off + 2 + len)
 }
 
 /// Compute certID (base64url(AKI).base64url(serial)) from PEM bytes.
 pub fn cert_id_from_pem(pem_data: &[u8]) -> Result<String> {
-    let (_, pem) = x509_parser::pem::parse_x509_pem(pem_data)
-        .map_err(|e| anyhow!("Invalid PEM: {e}"))?;
+    let (_, pem) =
+        x509_parser::pem::parse_x509_pem(pem_data).map_err(|e| anyhow!("Invalid PEM: {e}"))?;
     let (_, cert) = x509_parser::parse_x509_certificate(&pem.contents)
         .context("Failed to parse certificate")?;
-    let aki = cert.extensions()
+    let aki = cert
+        .extensions()
         .iter()
         .find(|ext| ext.oid.to_string() == OID_AKI)
         .and_then(|ext| extract_aki_key_hash(ext.value).map(|s| s.to_vec()))
@@ -37,12 +46,12 @@ pub fn cert_id_from_pem(pem_data: &[u8]) -> Result<String> {
 pub fn cert_id_from_file(cert_path: &str) -> Result<String> {
     let bytes = if cert_path == "-" {
         let mut buf = Vec::new();
-        std::io::stdin().read_to_end(&mut buf)
+        std::io::stdin()
+            .read_to_end(&mut buf)
             .with_context(|| "Failed to read certificate from stdin")?;
         buf
     } else {
-        std::fs::read(cert_path)
-            .with_context(|| format!("Failed to read {cert_path}"))?
+        std::fs::read(cert_path).with_context(|| format!("Failed to read {cert_path}"))?
     };
     cert_id_from_pem(&bytes)
 }
@@ -58,7 +67,10 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     }
 
     let client = if insecure {
-        reqwest::Client::builder().danger_accept_invalid_certs(true).build().context("Failed to create HTTP client")?
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .context("Failed to create HTTP client")?
     } else {
         reqwest::Client::new()
     };
@@ -68,11 +80,19 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     }
     let directory: serde_json::Value = client
         .get(directory_url)
-        .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
-        .send().await.context("Failed to fetch ACME directory")?
-        .json().await.context("Invalid directory response")?;
+        .header(
+            "User-Agent",
+            concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")),
+        )
+        .send()
+        .await
+        .context("Failed to fetch ACME directory")?
+        .json()
+        .await
+        .context("Invalid directory response")?;
 
-    let renewal_url = directory["renewalInfo"].as_str()
+    let renewal_url = directory["renewalInfo"]
+        .as_str()
         .ok_or_else(|| anyhow!(r#"{{"renew":false,"reason":"no ari endpoint"}}"#))?;
     if verbose >= 1 {
         eprintln!("[ari] renewalInfo endpoint: {renewal_url}");
@@ -81,14 +101,19 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     let url = if renewal_url.starts_with("http") {
         format!("{renewal_url}/{cert_id}")
     } else {
-        let dir_url = reqwest::Url::parse(directory_url)
-            .context("Invalid directory URL")?;
-        format!("{}://{}{}/{}/{}",
+        let dir_url = reqwest::Url::parse(directory_url).context("Invalid directory URL")?;
+        format!(
+            "{}://{}{}/{}/{}",
             dir_url.scheme(),
             dir_url.host_str().unwrap_or(""),
-            if let Some(port) = dir_url.port() { format!(":{port}") } else { String::new() },
+            if let Some(port) = dir_url.port() {
+                format!(":{port}")
+            } else {
+                String::new()
+            },
             renewal_url.trim_matches('/'),
-            cert_id)
+            cert_id
+        )
     };
 
     if verbose >= 2 {
@@ -96,8 +121,13 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
     }
     let resp = client
         .get(&url)
-        .header("User-Agent", concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")))
-        .send().await.context("Failed to query ARI endpoint")?;
+        .header(
+            "User-Agent",
+            concat!("acme-tiny-rs/", env!("CARGO_PKG_VERSION")),
+        )
+        .send()
+        .await
+        .context("Failed to query ARI endpoint")?;
     if verbose >= 1 {
         eprintln!("[ari] Response: HTTP {}", resp.status());
     }
@@ -112,7 +142,10 @@ pub async fn run(cert_path: &str, directory_url: &str, insecure: bool, verbose: 
 
     let info: serde_json::Value = resp.json().await.context("Invalid ARI response")?;
     if verbose >= 3 {
-        eprintln!("[ari] Response body: {}", serde_json::to_string_pretty(&info)?);
+        eprintln!(
+            "[ari] Response body: {}",
+            serde_json::to_string_pretty(&info)?
+        );
     }
     println!("{info}");
     Ok(())

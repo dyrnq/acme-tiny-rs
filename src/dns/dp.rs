@@ -19,7 +19,11 @@ impl DNSPodDns {
     pub fn new() -> Result<Self> {
         let id = env::var("DP_Id").map_err(|_| anyhow!("DP_Id env var required"))?;
         let key = env::var("DP_Key").map_err(|_| anyhow!("DP_Key env var required"))?;
-        Ok(Self { id, key, client: reqwest::blocking::Client::new() })
+        Ok(Self {
+            id,
+            key,
+            client: reqwest::blocking::Client::new(),
+        })
     }
 
     fn call_api(&self, action: &str, extra: &[(&str, &str)]) -> Result<serde_json::Value> {
@@ -31,13 +35,16 @@ impl DNSPodDns {
             ("error_on_empty", "no"),
         ];
         body.extend_from_slice(extra);
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .post(format!("{DP_API}/{action}"))
             .form(&body)
             .send()?
             .json()?;
         if resp["status"]["code"].as_str() != Some("1") {
-            let msg = resp["status"]["message"].as_str().unwrap_or("unknown error");
+            let msg = resp["status"]["message"]
+                .as_str()
+                .unwrap_or("unknown error");
             bail!("DNSPod API error: {msg}");
         }
         Ok(resp)
@@ -67,32 +74,38 @@ impl DNSPodDns {
 impl DnsProvider for DNSPodDns {
     fn present(&self, domain: &str, value: &str) -> Result<()> {
         let (_root, sub, domain_id) = self.get_root_domain(domain)?;
-        self.call_api("Record.Create", &[
-            ("domain_id", &domain_id),
-            ("sub_domain", &sub),
-            ("record_type", "TXT"),
-            ("record_line", "默认"),
-            ("value", value),
-        ])?;
+        self.call_api(
+            "Record.Create",
+            &[
+                ("domain_id", &domain_id),
+                ("sub_domain", &sub),
+                ("record_type", "TXT"),
+                ("record_line", "默认"),
+                ("value", value),
+            ],
+        )?;
         println!("[dnspod] TXT record set: _acme-challenge.{domain} = {value}");
         Ok(())
     }
 
     fn cleanup(&self, domain: &str, value: &str) -> Result<()> {
         let (_root, sub, domain_id) = self.get_root_domain(domain)?;
-        if let Ok(resp) = self.call_api("Record.List", &[
-            ("domain_id", &domain_id),
-            ("sub_domain", &sub),
-            ("record_type", "TXT"),
-        ]) {
+        if let Ok(resp) = self.call_api(
+            "Record.List",
+            &[
+                ("domain_id", &domain_id),
+                ("sub_domain", &sub),
+                ("record_type", "TXT"),
+            ],
+        ) {
             if let Some(records) = resp["records"].as_array() {
                 for r in records {
                     if r["value"].as_str() == Some(value) {
                         if let Some(id) = r["id"].as_str() {
-                            let _ = self.call_api("Record.Remove", &[
-                                ("domain_id", &domain_id),
-                                ("record_id", id),
-                            ]);
+                            let _ = self.call_api(
+                                "Record.Remove",
+                                &[("domain_id", &domain_id), ("record_id", id)],
+                            );
                             println!("[dnspod] TXT record removed: _acme-challenge.{domain}");
                         }
                     }

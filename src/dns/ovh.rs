@@ -89,10 +89,7 @@ impl OvhDns {
 
     fn get_timestamp(&self) -> Result<String> {
         let url = format!("{}/auth/time", self.base_url());
-        let resp = self
-            .client
-            .get(&url)
-            .send()?;
+        let resp = self.client.get(&url).send()?;
         Ok(resp.text()?.trim().to_string())
     }
 
@@ -227,11 +224,8 @@ impl DnsProvider for OvhDns {
         if let Ok(record_ids) = ids {
             for rid in record_ids {
                 // Get the record details to check if it matches
-                let detail = self.api_call(
-                    "GET",
-                    &format!("/domain/zone/{}/record/{}", zone, rid),
-                    "",
-                )?;
+                let detail =
+                    self.api_call("GET", &format!("/domain/zone/{}/record/{}", zone, rid), "")?;
                 if detail.contains(value) {
                     let _ = self.api_call(
                         "DELETE",

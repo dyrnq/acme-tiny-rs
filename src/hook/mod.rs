@@ -28,11 +28,7 @@ impl Hook {
     /// Execute the hook command or script with the given environment variables.
     pub fn run(&self, env_vars: &[(&str, &str)]) -> Result<()> {
         let cmd_str = match self {
-            Hook::Pre(s)
-            | Hook::Post(s)
-            | Hook::Renew(s)
-            | Hook::Deploy(s)
-            | Hook::Notify(s) => s,
+            Hook::Pre(s) | Hook::Post(s) | Hook::Renew(s) | Hook::Deploy(s) | Hook::Notify(s) => s,
         };
 
         if cmd_str.is_empty() {
@@ -65,7 +61,11 @@ impl Hook {
     }
 
     /// Standard ACME environment variables set for all hooks (acme.sh compatible).
-    pub fn acme_env_vars<'a>(cert_path: &'a str, key_path: &'a str, domain: &'a str) -> Vec<(&'a str, &'a str)> {
+    pub fn acme_env_vars<'a>(
+        cert_path: &'a str,
+        key_path: &'a str,
+        domain: &'a str,
+    ) -> Vec<(&'a str, &'a str)> {
         vec![
             ("CERT_PATH", cert_path),
             ("Le_CertFile", cert_path),

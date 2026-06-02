@@ -5,7 +5,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::json;
 
-use crate::{send_signed_request, Directory, parse_account_key, USER_AGENT};
+use crate::{parse_account_key, send_signed_request, Directory, USER_AGENT};
 
 /// Build HTTP client for revoke with optional custom CA bundle / insecure mode.
 fn build_http_client(ca_bundle: Option<&str>, insecure: bool) -> Result<reqwest::Client> {
@@ -14,8 +14,8 @@ fn build_http_client(ca_bundle: Option<&str>, insecure: bool) -> Result<reqwest:
     if insecure {
         builder = builder.danger_accept_invalid_certs(true);
     } else if let Some(ref path) = ca_bundle {
-        let cert_pem = std::fs::read(path)
-            .with_context(|| format!("Error reading CA bundle: {path}"))?;
+        let cert_pem =
+            std::fs::read(path).with_context(|| format!("Error reading CA bundle: {path}"))?;
         let cert = reqwest::tls::Certificate::from_pem(&cert_pem)
             .context("Failed to parse CA certificate")?;
         builder = builder.add_root_certificate(cert);
@@ -50,20 +50,33 @@ pub async fn run(
     let directory: serde_json::Value = client
         .get(directory_url)
         .header("User-Agent", USER_AGENT)
-        .send().await.context("Failed to fetch ACME directory")?
-        .json().await.context("Invalid directory response")?;
+        .send()
+        .await
+        .context("Failed to fetch ACME directory")?
+        .json()
+        .await
+        .context("Invalid directory response")?;
 
-    let revoke_url = directory["revokeCert"].as_str()
-        .ok_or_else(|| anyhow!("Server does not support certificate revocation (no revokeCert endpoint in directory)"))?;
+    let revoke_url = directory["revokeCert"].as_str().ok_or_else(|| {
+        anyhow!(
+            "Server does not support certificate revocation (no revokeCert endpoint in directory)"
+        )
+    })?;
 
     // Build Directory struct for nonce fetching
     let dir = Directory {
-        new_nonce: directory["newNonce"].as_str()
-            .ok_or_else(|| anyhow!("Missing newNonce in directory"))?.to_string(),
-        new_account: directory["newAccount"].as_str()
-            .ok_or_else(|| anyhow!("Missing newAccount in directory"))?.to_string(),
-        new_order: directory["newOrder"].as_str()
-            .ok_or_else(|| anyhow!("Missing newOrder in directory"))?.to_string(),
+        new_nonce: directory["newNonce"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing newNonce in directory"))?
+            .to_string(),
+        new_account: directory["newAccount"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing newAccount in directory"))?
+            .to_string(),
+        new_order: directory["newOrder"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing newOrder in directory"))?
+            .to_string(),
         renewal_info: directory["renewalInfo"].as_str().map(|s| s.to_string()),
         key_change: directory["keyChange"].as_str().map(|s| s.to_string()),
     };
@@ -79,9 +92,11 @@ pub async fn run(
         &signing_key,
         &None,
         &dir,
-    ).await?;
+    )
+    .await?;
 
-    let acct_location = headers.get("Location")
+    let acct_location = headers
+        .get("Location")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
@@ -103,7 +118,8 @@ pub async fn run(
         &signing_key,
         &acct_location,
         &dir,
-    ).await?;
+    )
+    .await?;
 
     if status.is_success() {
         println!("Certificate revoked successfully.");

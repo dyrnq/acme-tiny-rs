@@ -17,8 +17,7 @@ pub struct DigitalOceanDns {
 impl DigitalOceanDns {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            api_key: env::var("DO_API_KEY")
-                .map_err(|_| anyhow!("DO_API_KEY env var required"))?,
+            api_key: env::var("DO_API_KEY").map_err(|_| anyhow!("DO_API_KEY env var required"))?,
             client: reqwest::blocking::Client::new(),
         })
     }
@@ -127,7 +126,9 @@ impl DnsProvider for DigitalOceanDns {
         // List records and find matching ones to delete
         let resp: serde_json::Value = self
             .client
-            .get(format!("{DO_API}/{zone}/records?type=TXT&name={sub}&per_page=200"))
+            .get(format!(
+                "{DO_API}/{zone}/records?type=TXT&name={sub}&per_page=200"
+            ))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .send()?

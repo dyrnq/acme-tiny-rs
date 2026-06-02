@@ -74,10 +74,12 @@ impl CloudflareDns {
             .send()?
             .json()?;
 
-        let records = resp["result"].as_array().ok_or_else(|| {
-            anyhow!("Cloudflare API error: {resp}")
-        })?;
-        Ok(records.first().and_then(|r| r["id"].as_str().map(|s| s.to_string())))
+        let records = resp["result"]
+            .as_array()
+            .ok_or_else(|| anyhow!("Cloudflare API error: {resp}"))?;
+        Ok(records
+            .first()
+            .and_then(|r| r["id"].as_str().map(|s| s.to_string())))
     }
 }
 
