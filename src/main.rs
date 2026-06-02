@@ -1832,7 +1832,10 @@ async fn main() -> Result<()> {
     }
 
     // Run hooks after certificate is written to disk
-    let envs = hook::Hook::acme_env_vars("", "", "");
+    let cert_path = cli.output.as_deref().unwrap_or("");
+    let key_path = cli.account_key.as_deref().unwrap_or("");
+    let primary_domain = domains.first().map(|s| s.as_str()).unwrap_or("");
+    let envs = hook::Hook::acme_env_vars(cert_path, key_path, primary_domain);
     #[allow(unused_must_use)]
     {
         if let Some(ref cmd) = cli.renew_hook {
