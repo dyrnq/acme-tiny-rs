@@ -38,6 +38,10 @@ gen_test_keys() {
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
         -out "${dir}/account_ec.key" 2>/dev/null
 
+    # Ed25519 account key
+    openssl genpkey -algorithm ED25519 \
+        -out "${dir}/account_ed25519.key" 2>/dev/null
+
     # Domain key (RSA)
     openssl genrsa -out "${dir}/domain.key" 2048 2>/dev/null
 
