@@ -595,8 +595,20 @@ pub(crate) async fn do_request(
             && (json.get("type").and_then(|t| t.as_str())
                 == Some("urn:ietf:params:acme:error:alreadyReplaced")))
     {
+        let location = headers
+            .get("Location")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let nonce = headers
+            .get("Replay-Nonce")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let content_type = headers
+            .get("Content-Type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
         bail!(
-            "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nResponse: {json}",
+            "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nContent-Type: {content_type}\nLocation: {location}\nReplay-Nonce: {nonce}\nResponse: {json}",
             data_str.as_deref().unwrap_or("None")
         );
     }
@@ -1239,6 +1251,12 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         None
     };
     info!("Directory found!");
+    log::info!(
+        "Directory endpoints: newNonce={} newAccount={} newOrder={}",
+        directory.new_nonce,
+        directory.new_account,
+        directory.new_order
+    );
 
     // Register account
     info!("Registering account...");
@@ -1426,6 +1444,12 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         .iter()
         .filter_map(|v| v.as_str().map(|s| s.to_string()))
         .collect();
+    log::info!(
+        "Order details: order_url={} finalize_url={} authorizations={}",
+        order_location,
+        order.get("finalize").and_then(|f| f.as_str()).unwrap_or(""),
+        authorizations.len()
+    );
 
     for auth_url in &authorizations {
         let (authorization, _, _) = send_signed_request(
@@ -1449,6 +1473,12 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             info!("Already verified: {domain}, skipping...");
             continue;
         }
+        log::info!(
+            "Authorization: url={} domain={} status={}",
+            auth_url,
+            domain,
+            authorization["status"].as_str().unwrap_or("")
+        );
         info!("Verifying {domain}...");
 
         let challenge_type = &cli.challenge_type;
@@ -1461,6 +1491,12 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             .iter()
             .find(|c| c["type"].as_str() == Some(challenge_type))
             .ok_or_else(|| anyhow!("No {challenge_type} challenge for {domain}"))?;
+        log::info!(
+            "Selected challenge: url={} type={} token={}",
+            challenge["url"].as_str().unwrap_or(""),
+            challenge["type"].as_str().unwrap_or(""),
+            challenge["token"].as_str().unwrap_or("")
+        );
 
         let token = challenge["token"]
             .as_str()
@@ -1643,6 +1679,11 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
     let finalize_url = order["finalize"]
         .as_str()
         .ok_or_else(|| anyhow!("Missing finalize URL in order"))?;
+    log::info!(
+        "Finalizing order: order_url={} finalize_url={}",
+        order_location,
+        finalize_url
+    );
     send_signed_request(
         &client,
         finalize_url,
