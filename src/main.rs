@@ -1833,7 +1833,7 @@ async fn main() -> Result<()> {
     let acct_key = cli.account_key.clone();
     let acct_cb = cli.ca_bundle.clone();
     let acct_ins = cli.insecure;
-    let _acct_dir = resolve_directory_url(&cli).unwrap_or_default();
+    let _acct_dir = resolve_directory_url(&cli)?;
 
     // Dispatch subcommand
     if let Some(cmd) = cli.command {
