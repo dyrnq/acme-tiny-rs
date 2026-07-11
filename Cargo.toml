@@ -26,6 +26,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 rsa = { version = "0.9", features = ["pem", "sha2"] }
 pkcs8 = { version = "0.10", features = ["pem"] }
 pkcs1 = "0.7"
+pem = "3"
 
 # ECDSA key support (P-256, P-384)
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }

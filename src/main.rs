@@ -847,19 +847,29 @@ pub(crate) fn parse_account_key(path: &str) -> Result<SigningKey> {
 
 /// Parse account key from PEM data (used by stdin `-` support).
 pub(crate) fn parse_account_key_bytes(pem_data: &str) -> Result<SigningKey> {
-    // Detect key type from PEM header
-    if pem_data.contains("RSA PRIVATE KEY") {
-        parse_rsa_key(pem_data)
-    } else if pem_data.contains("EC PRIVATE KEY") {
-        parse_ec_key(pem_data)
-    } else if pem_data.contains("PRIVATE KEY") {
-        // PKCS#8 format — try RSA first, then EC
-        parse_rsa_key(pem_data)
-            .or_else(|_| parse_ec_key(pem_data))
-            .or_else(|_| parse_ed25519_key(pem_data))
-    } else {
-        bail!("Unsupported key format")
+    // Detect key type from the PEM block's tag (the part inside BEGIN/END),
+    // not from substring matching — substring matches collide with comments
+    // and unrelated headers like "OPENSSH PRIVATE KEY".
+    let last_tag = primary_pem_tag(pem_data).context("Failed to parse PEM data")?;
+    match last_tag.as_str() {
+        "RSA PRIVATE KEY" | "RSA PUBLIC KEY" => parse_rsa_key(pem_data),
+        "EC PRIVATE KEY" => parse_ec_key(pem_data),
+        "PRIVATE KEY" => {
+            // PKCS#8 — type unknown until parsed; try each.
+            parse_rsa_key(pem_data)
+                .or_else(|_| parse_ec_key(pem_data))
+                .or_else(|_| parse_ed25519_key(pem_data))
+        }
+        other => bail!("Unsupported PEM block type: {other}"),
     }
+}
+
+/// Return the PEM tag of the last BEGIN/END block in the input. If the input
+/// has no recognizable PEM markers, falls back to treating the whole input as
+/// one PEM document and reading its tag.
+fn primary_pem_tag(pem_data: &str) -> Option<String> {
+    let pems = pem::parse_many(pem_data).ok()?;
+    pems.last().map(|b| b.tag().to_string())
 }
 
 fn parse_rsa_key(pem_data: &str) -> Result<SigningKey> {

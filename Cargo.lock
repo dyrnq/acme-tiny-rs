@@ -18,6 +18,7 @@ dependencies = [
  "log",
  "p256",
  "p384",
+ "pem",
  "pkcs1",
  "pkcs8",
  "rcgen",
