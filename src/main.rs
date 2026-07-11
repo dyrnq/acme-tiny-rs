@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use clap::{Parser, Subcommand, ValueHint};
-use log::{info, LevelFilter};
+use log::{debug, info, LevelFilter};
 use p256::ecdsa::SigningKey as P256SigningKey;
 use p256::SecretKey as P256SecretKey;
 use p384::ecdsa::SigningKey as P384SigningKey;
@@ -754,15 +754,17 @@ async fn poll_until_not(
     #[allow(unused_assignments)]
     let mut result = serde_json::Value::Null;
     let mut first = true;
+    let mut poll_count: u32 = 0;
 
     loop {
         if start.elapsed() > timeout {
-            bail!("Polling timeout");
+            bail!("Polling timeout after {poll_count} iterations");
         }
         if !first {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         first = false;
+        poll_count += 1;
 
         let (res, _, _) = send_signed_request(
             client,
@@ -777,7 +779,15 @@ async fn poll_until_not(
         result = res;
 
         let status = result["status"].as_str().unwrap_or("");
+        debug!(
+            "Poll {poll_count}: status={status} elapsed={}s",
+            start.elapsed().as_secs()
+        );
         if !pending_statuses.contains(&status) {
+            info!(
+                "Poll finished after {poll_count} iterations, final status={status} ({}s)",
+                start.elapsed().as_secs()
+            );
             break;
         }
     }
@@ -1251,7 +1261,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         None
     };
     info!("Directory found!");
-    log::info!(
+    debug!(
         "Directory endpoints: newNonce={} newAccount={} newOrder={}",
         directory.new_nonce,
         directory.new_account,
@@ -1444,7 +1454,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         .iter()
         .filter_map(|v| v.as_str().map(|s| s.to_string()))
         .collect();
-    log::info!(
+    debug!(
         "Order details: order_url={} finalize_url={} authorizations={}",
         order_location,
         order.get("finalize").and_then(|f| f.as_str()).unwrap_or(""),
@@ -1469,16 +1479,15 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             .to_string();
 
         // Skip if already valid
-        if authorization["status"].as_str() == Some("valid") {
+        let auth_status = authorization["status"].as_str().unwrap_or("");
+        debug!(
+            "Authorization: url={} domain={} status={}",
+            auth_url, domain, auth_status
+        );
+        if auth_status == "valid" {
             info!("Already verified: {domain}, skipping...");
             continue;
         }
-        log::info!(
-            "Authorization: url={} domain={} status={}",
-            auth_url,
-            domain,
-            authorization["status"].as_str().unwrap_or("")
-        );
         info!("Verifying {domain}...");
 
         let challenge_type = &cli.challenge_type;
@@ -1491,7 +1500,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             .iter()
             .find(|c| c["type"].as_str() == Some(challenge_type))
             .ok_or_else(|| anyhow!("No {challenge_type} challenge for {domain}"))?;
-        log::info!(
+        debug!(
             "Selected challenge: url={} type={} token={}",
             challenge["url"].as_str().unwrap_or(""),
             challenge["type"].as_str().unwrap_or(""),
@@ -1540,7 +1549,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
                     .to_string()
             };
             if effective_domain != domain {
-                log::info!(
+                debug!(
                     "DNS challenge delegated from {} -> {}",
                     domain,
                     effective_domain
@@ -1679,7 +1688,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
     let finalize_url = order["finalize"]
         .as_str()
         .ok_or_else(|| anyhow!("Missing finalize URL in order"))?;
-    log::info!(
+    debug!(
         "Finalizing order: order_url={} finalize_url={}",
         order_location,
         finalize_url
