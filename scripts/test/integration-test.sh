@@ -24,7 +24,19 @@ run_test() {
     local name="$1"
     shift
     echo -n "  ${name}... "
-    if "$@" > /dev/null 2>&1; then
+    # Run inside its own session (setsid) and explicitly clean up the
+    # process group after the test, regardless of outcome. This catches
+    # backgrounded openssl/socat children even when the test fails before
+    # reaching its manual `kill $PID` line. Block SIGTERM during cleanup
+    # so kill -- -$$ does not also kill this bash before exit $RC.
+    if setsid bash -c '
+        ( "$@" )
+        RC=$?
+        trap "" TERM
+        kill -- -$$ 2>/dev/null || true
+        trap - TERM
+        exit $RC
+    ' bash "$@" > /dev/null 2>&1; then
         echo -e "${GREEN}OK${NC}"
         PASSED=$((PASSED + 1))
         return 0
@@ -40,7 +52,14 @@ run_test_debug() {
     local name="$1"
     shift
     echo -n "  ${name}... "
-    if "$@" 2>&1; then
+    if setsid bash -c '
+        ( "$@" )
+        RC=$?
+        trap "" TERM
+        kill -- -$$ 2>/dev/null || true
+        trap - TERM
+        exit $RC
+    ' bash "$@" 2>&1; then
         echo -e "${GREEN}OK${NC}"
         PASSED=$((PASSED + 1))
         return 0
@@ -900,13 +919,13 @@ run_test "account re-register after unregister" \
             account register --server pebble -k -vvv 2>&1 | grep -q 'Account URL'
     "
 
-run_test "account -v verbose output" \
+run_test "account -v verbose output (RSA key)" \
     bash -c "
         ${BINARY} --account-key ${KEYS_DIR}/account.key \
             account show --server pebble -k -v 2>&1 | grep -q '\[account\]'
     "
 
-run_test "account -v verbose output" \
+run_test "account -v verbose output (ECDSA key)" \
     bash -c "
         ${BINARY} --account-key ${KEYS_DIR}/account_ec.key \
             account show --server pebble -k -v 2>&1 | grep -q '\[account\]'
@@ -1000,154 +1019,7 @@ else
     echo "  DNS tests: SKIPPED (challtestsrv not available)"
 fi
 
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            ${BASE_ARGS} --connect-timeout 30 \
-            > ${TMPDIR}/connect_timeout.crt 2>/dev/null && \
-        cert_ok ${TMPDIR}/connect_timeout.crt 'Pebble'
-    "
-
-run_test "--timeout (accepts flag)" \
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            ${BASE_ARGS} --timeout 15 \
-            > ${TMPDIR}/timeout.crt 2>/dev/null && \
-        cert_ok ${TMPDIR}/timeout.crt 'Pebble'
-    "
-
-run_test "--log-level 2 (request + body)" \
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            ${BASE_ARGS} \
-            --log ${TMPDIR}/log_lvl2.log --log-level 2 \
-            --output ${TMPDIR}/log_lvl2.crt 2>/dev/null && \
-        cert_ok ${TMPDIR}/log_lvl2.crt 'Pebble' && \
-        grep -q 'POST' ${TMPDIR}/log_lvl2.log
-    "
-
-run_test "completions subcommand (bash)" \
-    bash -c "
-        ${BINARY} completions bash > ${TMPDIR}/comp.bash 2>/dev/null && \
-        grep -q 'complete' ${TMPDIR}/comp.bash
-    "
-
-run_test "completions subcommand (zsh)" \
-    bash -c "
-        ${BINARY} completions zsh > ${TMPDIR}/comp.zsh 2>/dev/null && \
-        grep -q 'compdef' ${TMPDIR}/comp.zsh
-    "
-
-run_test "completions subcommand (fish)" \
-    bash -c "
-        ${BINARY} completions fish > ${TMPDIR}/comp.fish 2>/dev/null && \
-        grep -q 'complete' ${TMPDIR}/comp.fish
-    "
-
-run_test "ed25519 account key (supported CA detected or skipped)" \
-    bash -c "
-        if ${BINARY} \
-            --account-key ${KEYS_DIR}/account_ed25519.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            ${BASE_ARGS} \
-            --output ${TMPDIR}/ed25519.crt 2>/dev/null; then
-            cert_ok ${TMPDIR}/ed25519.crt 'Pebble'
-        else
-            echo 'ed25519 not supported by this CA — skip is expected'
-        fi
-    "
-
-echo -e "Passed: ${GREEN}${PASSED}${NC}"
-echo -e "Failed: ${RED}${FAILED}${NC}"
-echo ""
-
-if [ ${FAILED} -gt 0 ]; then
-    exit 1
-fi
-exit 0
-
-# ==== Missing coverage: hooks, flags, subcommands ====
-
-run_test "renew-hook executes after renewal" \
-    bash -c '
-        HOOK_OUT='"${TMPDIR}"'/renew_hook.out
-        '"${BINARY}"' \
-            --account-key '"${KEYS_DIR}"'/account.key \
-            --csr '"${KEYS_DIR}"'/domain.csr \
-            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
-            '"${BASE_ARGS}"' \
-            --renew-hook "echo renew-ok > ${HOOK_OUT}" \
-            --output '"${TMPDIR}"'/renew_hook.crt 2>/dev/null && \
-        grep -q renew-ok ${HOOK_OUT}
-    '
-
-run_test "notify-hook executes after issuance" \
-    bash -c '
-        HOOK_OUT='"${TMPDIR}"'/notify_hook.out
-        '"${BINARY}"' \
-            --account-key '"${KEYS_DIR}"'/account.key \
-            --csr '"${KEYS_DIR}"'/domain.csr \
-            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
-            '"${BASE_ARGS}"' \
-            --notify-hook "echo notify-ok > ${HOOK_OUT}" \
-            --output '"${TMPDIR}"'/notify_hook.crt 2>/dev/null && \
-        grep -q notify-ok ${HOOK_OUT}
-    '
-
-run_test "notify-hook runs on ARI skip (empty cert)" \
-    bash -c '
-        HOOK_OUT='"${TMPDIR}"'/notify_skip.out
-        '"${BINARY}"' \
-            --account-key '"${KEYS_DIR}"'/account.key \
-            --csr '"${KEYS_DIR}"'/domain.csr \
-            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
-            '"${BASE_ARGS}"' \
-            --output '"${TMPDIR}"'/notify_ref.crt 2>/dev/null
-        '"${BINARY}"' \
-            --account-key '"${KEYS_DIR}"'/account.key \
-            --csr '"${KEYS_DIR}"'/domain.csr \
-            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
-            '"${BASE_ARGS}"' \
-            --cert '"${TMPDIR}"'/notify_ref.crt --renew-before 0 \
-            --notify-hook "echo notify-skip > ${HOOK_OUT}" \
-            --output '"${TMPDIR}"'/notify_skip.crt 2>/dev/null
-        grep -q notify-skip ${HOOK_OUT}
-    '
-
-run_test "--challenge-alias (exact domain with = prefix)" \
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            ${BASE_ARGS} \
-            --challenge-alias '=localhost' \
-            > ${TMPDIR}/alias_exact.crt 2>/dev/null && \
-        cert_ok ${TMPDIR}/alias_exact.crt 'Pebble'
-    "
-
-run_test "--challenge-alias (CNAME delegation without =)" \
-    bash -c "
-        ${BINARY} \
-            --account-key ${KEYS_DIR}/account.key \
-            --csr ${KEYS_DIR}/domain.csr \
-            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
-            ${BASE_ARGS} \
-            --challenge-alias 'localhost' \
-            > ${TMPDIR}/alias_cname.crt 2>/dev/null && \
-        cert_ok ${TMPDIR}/alias_cname.crt 'Pebble'
-    "
-
-run_test "--connect-timeout (accepts flag)" \
+    run_test "--connect-timeout (accepts flag)" \
     bash -c "
         ${BINARY} \
             --account-key ${KEYS_DIR}/account.key \
@@ -1210,3 +1082,88 @@ run_test "ed25519 account key issues certificate" \
             --output ${TMPDIR}/ed25519.crt 2>/dev/null && \
         cert_ok ${TMPDIR}/ed25519.crt 'Pebble'
     "
+
+# ==== Hooks (renew / notify) ====
+
+run_test "renew-hook executes after renewal" \
+    bash -c '
+        HOOK_OUT='"${TMPDIR}"'/renew_hook.out
+        '"${BINARY}"' \
+            --account-key '"${KEYS_DIR}"'/account.key \
+            --csr '"${KEYS_DIR}"'/domain.csr \
+            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
+            '"${BASE_ARGS}"' \
+            --renew-hook "echo renew-ok > ${HOOK_OUT}" \
+            --output '"${TMPDIR}"'/renew_hook.crt 2>/dev/null && \
+        grep -q renew-ok ${HOOK_OUT}
+    '
+
+run_test "notify-hook executes after issuance" \
+    bash -c '
+        HOOK_OUT='"${TMPDIR}"'/notify_hook.out
+        '"${BINARY}"' \
+            --account-key '"${KEYS_DIR}"'/account.key \
+            --csr '"${KEYS_DIR}"'/domain.csr \
+            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
+            '"${BASE_ARGS}"' \
+            --notify-hook "echo notify-ok > ${HOOK_OUT}" \
+            --output '"${TMPDIR}"'/notify_hook.crt 2>/dev/null && \
+        grep -q notify-ok ${HOOK_OUT}
+    '
+
+run_test "notify-hook runs on ARI skip (empty cert)" \
+    bash -c '
+        HOOK_OUT='"${TMPDIR}"'/notify_skip.out
+        '"${BINARY}"' \
+            --account-key '"${KEYS_DIR}"'/account.key \
+            --csr '"${KEYS_DIR}"'/domain.csr \
+            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
+            '"${BASE_ARGS}"' \
+            --output '"${TMPDIR}"'/notify_ref.crt 2>/dev/null
+        '"${BINARY}"' \
+            --account-key '"${KEYS_DIR}"'/account.key \
+            --csr '"${KEYS_DIR}"'/domain.csr \
+            --acme-dir '"${TMPDIR}"'/challenges/.well-known/acme-challenge/ \
+            '"${BASE_ARGS}"' \
+            --cert '"${TMPDIR}"'/notify_ref.crt --renew-before 0 \
+            --notify-hook "echo notify-skip > ${HOOK_OUT}" \
+            --output '"${TMPDIR}"'/notify_skip.crt 2>/dev/null
+        grep -q notify-skip ${HOOK_OUT}
+    '
+
+# ==== --challenge-alias ====
+
+run_test "--challenge-alias (exact match, = prefix)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --challenge-alias '=localhost' \
+            > ${TMPDIR}/alias_exact.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/alias_exact.crt 'Pebble'
+    "
+
+run_test "--challenge-alias (CNAME delegation, no = prefix)" \
+    bash -c "
+        ${BINARY} \
+            --account-key ${KEYS_DIR}/account.key \
+            --csr ${KEYS_DIR}/domain.csr \
+            --acme-dir ${TMPDIR}/challenges/.well-known/acme-challenge/ \
+            ${BASE_ARGS} \
+            --challenge-alias 'localhost' \
+            > ${TMPDIR}/alias_cname.crt 2>/dev/null && \
+        cert_ok ${TMPDIR}/alias_cname.crt 'Pebble'
+    "
+
+# ==== Summary ====
+
+echo ""
+echo -e "Passed: ${GREEN}${PASSED}${NC}"
+echo -e "Failed: ${RED}${FAILED}${NC}"
+
+if [ ${FAILED} -gt 0 ]; then
+    exit 1
+fi
+exit 0

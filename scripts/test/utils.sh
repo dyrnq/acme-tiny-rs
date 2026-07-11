@@ -172,9 +172,25 @@ start_challtestsrv() {
     echo "Starting pebble-challtestsrv..."
     "${CHALLTESTSRV_BIN}" -dnsserver ":8053" -management ":8055" -http01 "" -https01 "" -tlsalpn01 "" &
     CHALLTESTSRV_PID=$!
-    sleep 2
-    echo "pebble-challtestsrv ready (PID: ${CHALLTESTSRV_PID})"
-    return 0
+
+    # Poll the management HTTP API until it responds (up to 10s).
+    # challtestsrv has no directory endpoint, but its management
+    # listener on 8055 accepts GETs; any HTTP response means it's up.
+    local max_wait=20
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if curl -s --noproxy '*' --connect-timeout 1 -o /dev/null -w '%{http_code}' \
+            "http://localhost:8055/" 2>/dev/null | grep -qE '^[1-5][0-9][0-9]$'; then
+            echo "pebble-challtestsrv ready (PID: ${CHALLTESTSRV_PID})"
+            return 0
+        fi
+        sleep 0.5
+        waited=$((waited + 1))
+    done
+
+    echo "ERROR: pebble-challtestsrv failed to start"
+    kill ${CHALLTESTSRV_PID} 2>/dev/null || true
+    return 1
 }
 
 # Start pebble with DNS server for DNS-01 testing
