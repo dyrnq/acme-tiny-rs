@@ -246,6 +246,12 @@ struct Cli {
     #[arg(long = "timeout")]
     timeout: Option<u64>,
 
+    /// Per-request wrapper timeout in seconds (default: 30).
+    /// Wraps both `send()` and `text()` so a hung server can't wedge the CLI.
+    /// Distinct from `--timeout`, which sets the reqwest client-level timeout.
+    #[arg(long = "request-timeout", default_value_t = 30)]
+    request_timeout: u64,
+
     // ---- Hooks (acme.sh compatible) ----
     /// Command or script to run before obtaining any certificates
     #[arg(long = "pre-hook")]
@@ -573,6 +579,7 @@ pub(crate) async fn do_request(
     url: &str,
     data: Option<Vec<u8>>,
     err_msg: &str,
+    request_timeout: Duration,
 ) -> Result<(
     serde_json::Value,
     reqwest::StatusCode,
@@ -590,26 +597,36 @@ pub(crate) async fn do_request(
         log_request!("-> {} {}", method, url);
     }
 
-    let resp = if let Some(body) = data {
-        client
-            .post(url)
-            .header("Content-Type", "application/jose+json")
-            .header("User-Agent", USER_AGENT)
-            .body(body)
-            .send()
-            .await
-    } else {
-        client
-            .get(url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await
-    }
-    .context(format!("{err_msg}: failed to send request to {url}"))?;
+    let send_fut = async {
+        if let Some(body) = data {
+            client
+                .post(url)
+                .header("Content-Type", "application/jose+json")
+                .header("User-Agent", USER_AGENT)
+                .body(body)
+                .send()
+                .await
+        } else {
+            client
+                .get(url)
+                .header("User-Agent", USER_AGENT)
+                .send()
+                .await
+        }
+    };
+    let resp = tokio::time::timeout(request_timeout, send_fut)
+        .await
+        .with_context(|| {
+            format!("{err_msg}: request to {url} timed out after {}s", request_timeout.as_secs())
+        })?
+        .with_context(|| format!("{err_msg}: failed to send request to {url}"))?;
 
     let status = resp.status();
     let headers = resp.headers().clone();
-    let body_text = resp.text().await.unwrap_or_default();
+    let body_text = tokio::time::timeout(request_timeout, resp.text())
+        .await
+        .map(|r| r.unwrap_or_default())
+        .unwrap_or_default();
     let json: serde_json::Value =
         serde_json::from_str(&body_text).unwrap_or(serde_json::Value::Null);
 
@@ -643,8 +660,8 @@ pub(crate) async fn do_request(
 // Signed request helper (JWS with RS256)
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn get_nonce(client: &reqwest::Client, directory: &Directory) -> Result<String> {
-    let (_, _, headers) = do_request(client, &directory.new_nonce, None, "nonce").await?;
+pub(crate) async fn get_nonce(client: &reqwest::Client, directory: &Directory, request_timeout: Duration) -> Result<String> {
+    let (_, _, headers) = do_request(client, &directory.new_nonce, None, "nonce", request_timeout).await?;
     Ok(headers
         .get("Replay-Nonce")
         .ok_or_else(|| anyhow!("Missing Replay-Nonce header"))?
@@ -660,6 +677,7 @@ pub(crate) async fn send_signed_request(
     signing_key: &SigningKey,
     acct_location: &Option<String>,
     directory: &Directory,
+    request_timeout: Duration,
 ) -> Result<(
     serde_json::Value,
     reqwest::StatusCode,
@@ -674,6 +692,7 @@ pub(crate) async fn send_signed_request(
         acct_location,
         directory,
         0,
+        request_timeout,
     )
     .await
 }
@@ -688,6 +707,7 @@ async fn send_signed_request_inner(
     acct_location: &Option<String>,
     directory: &Directory,
     depth: u32,
+    request_timeout: Duration,
 ) -> Result<(
     serde_json::Value,
     reqwest::StatusCode,
@@ -699,7 +719,7 @@ async fn send_signed_request_inner(
     };
 
     // Get a fresh nonce
-    let nonce_resp = do_request(client, &directory.new_nonce, None, "Error getting nonce").await?;
+    let nonce_resp = do_request(client, &directory.new_nonce, None, "Error getting nonce", request_timeout).await?;
     let nonce = nonce_resp
         .2
         .get("Replay-Nonce")
@@ -733,7 +753,7 @@ async fn send_signed_request_inner(
     };
 
     let data = serde_json::to_vec(&jws)?;
-    let result = do_request(client, url, Some(data), err_msg).await?;
+    let result = do_request(client, url, Some(data), err_msg, request_timeout).await?;
 
     // Handle badNonce retry (RFC 8555 §6.5: client SHOULD use a fresh nonce
     // on each request). When the CA evicts a nonce from its cache between our
@@ -768,6 +788,7 @@ async fn send_signed_request_inner(
             acct_location,
             directory,
             depth + 1,
+            request_timeout,
         ))
         .await;
     }
@@ -787,6 +808,7 @@ async fn poll_until_not(
     signing_key: &SigningKey,
     acct_location: &Option<String>,
     directory: &Directory,
+    request_timeout: Duration,
 ) -> Result<serde_json::Value> {
     let start = Instant::now();
     let timeout = Duration::from_secs(3600);
@@ -813,6 +835,7 @@ async fn poll_until_not(
             signing_key,
             acct_location,
             directory,
+            request_timeout,
         )
         .await?;
         result = res;
@@ -1171,6 +1194,7 @@ fn build_http_client(cli: &Cli) -> Result<reqwest::Client> {
 
 async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Result<String> {
     let client = build_http_client(cli)?;
+    let request_timeout = Duration::from_secs(cli.request_timeout);
 
     // Normalize challenge type to lowercase for case-insensitive matching
     let challenge_type = cli.challenge_type.to_lowercase();
@@ -1190,7 +1214,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
     // Get ACME directory
     info!("Getting directory...");
     let (dir_json, status, _) =
-        do_request(&client, &dir_url, None, "Error getting directory").await?;
+        do_request(&client, &dir_url, None, "Error getting directory", request_timeout).await?;
     if !status.is_success() {
         bail!("Error getting directory: HTTP {status}\n{dir_json}");
     }
@@ -1391,6 +1415,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         signing_key,
         &acct_location,
         &directory,
+        request_timeout,
     )
     .await?;
 
@@ -1420,6 +1445,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
                 signing_key,
                 &acct_location,
                 &directory,
+                request_timeout,
             )
             .await?;
             if let Some(contacts) = account_resp.get("contact").and_then(|c| c.as_array()) {
@@ -1461,6 +1487,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         signing_key,
         &acct_location,
         &directory,
+        request_timeout,
     )
     .await?;
 
@@ -1481,6 +1508,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             signing_key,
             &acct_location,
             &directory,
+            request_timeout,
         )
         .await?;
         order = new_order;
@@ -1520,6 +1548,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             signing_key,
             &acct_location,
             &directory,
+            request_timeout,
         )
         .await?;
 
@@ -1688,6 +1717,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
                 signing_key,
                 &acct_location,
                 &directory,
+                request_timeout,
             )
             .await?;
             poll_until_not(
@@ -1698,6 +1728,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
                 signing_key,
                 &acct_location,
                 &directory,
+                request_timeout,
             )
             .await
         }
@@ -1747,6 +1778,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         signing_key,
         &acct_location,
         &directory,
+        request_timeout,
     )
     .await?;
 
@@ -1759,6 +1791,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         signing_key,
         &acct_location,
         &directory,
+        request_timeout,
     )
     .await?;
 
@@ -1772,7 +1805,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         .ok_or_else(|| anyhow!("No certificate URL in order"))?;
 
     let certificate_pem =
-        download_certificate(&client, cert_url, signing_key, &acct_location, &directory).await?;
+        download_certificate(&client, cert_url, signing_key, &acct_location, &directory, request_timeout).await?;
 
     info!("Certificate signed!");
 
@@ -1789,10 +1822,11 @@ async fn download_certificate(
     signing_key: &SigningKey,
     acct_location: &Option<String>,
     directory: &Directory,
+    request_timeout: Duration,
 ) -> Result<String> {
     // Build a signed POST with empty payload (Accept: application/pem-certificate-chain)
     let payload64 = "";
-    let nonce_resp = do_request(client, &directory.new_nonce, None, "Error getting nonce").await?;
+    let nonce_resp = do_request(client, &directory.new_nonce, None, "Error getting nonce", request_timeout).await?;
     let nonce = nonce_resp
         .2
         .get("Replay-Nonce")
@@ -1900,12 +1934,13 @@ async fn main() -> Result<()> {
                         .map(|r| r.directory_url())
                         .unwrap_or_default()
                 });
+                let request_timeout = Duration::from_secs(cli.request_timeout);
                 if verbose >= 1 {
                     eprintln!("[account] Server: {dir}");
                 }
                 return match action {
                     AccountAction::Show => {
-                        commands::account::show(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose)
+                        commands::account::show(&sk, &dir, acct_cb.as_deref(), acct_ins, verbose, request_timeout)
                             .await
                     }
                     AccountAction::Update { email } => {
@@ -1916,6 +1951,7 @@ async fn main() -> Result<()> {
                             acct_cb.as_deref(),
                             acct_ins,
                             verbose,
+                            request_timeout,
                         )
                         .await
                     }
@@ -1937,6 +1973,7 @@ async fn main() -> Result<()> {
                             acct_cb.as_deref(),
                             acct_ins,
                             verbose,
+                            request_timeout,
                         )
                         .await
                     }
@@ -1947,6 +1984,7 @@ async fn main() -> Result<()> {
                             acct_cb.as_deref(),
                             acct_ins,
                             verbose,
+                            request_timeout,
                         )
                         .await
                     }
@@ -1958,6 +1996,7 @@ async fn main() -> Result<()> {
                             acct_cb.as_deref(),
                             acct_ins,
                             verbose,
+                            request_timeout,
                         )
                         .await
                     }
@@ -2067,6 +2106,7 @@ async fn main() -> Result<()> {
                     reason,
                     ca_bundle.as_deref(),
                     insecure,
+                    Duration::from_secs(cli.request_timeout),
                 )
                 .await;
             }

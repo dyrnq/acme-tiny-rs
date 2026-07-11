@@ -4,6 +4,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::json;
+use std::time::Duration;
 
 use crate::{parse_account_key, send_signed_request, Directory, USER_AGENT};
 
@@ -32,6 +33,7 @@ pub async fn run(
     reason: Option<u32>,
     ca_bundle: Option<&str>,
     insecure: bool,
+    request_timeout: Duration,
 ) -> Result<()> {
     // 1. Read and parse the certificate → DER, then base64url-encode
     let cert_pem = std::fs::read(cert_path)
@@ -92,6 +94,7 @@ pub async fn run(
         &signing_key,
         &None,
         &dir,
+        request_timeout,
     )
     .await?;
 
@@ -118,6 +121,7 @@ pub async fn run(
         &signing_key,
         &acct_location,
         &dir,
+        request_timeout,
     )
     .await?;
 

@@ -4,6 +4,7 @@
 use crate::{b64, send_signed_request, Directory, SigningKey, USER_AGENT};
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
+use std::time::Duration;
 
 fn client(cb: Option<&str>, ins: bool) -> Result<reqwest::Client> {
     let mut b = reqwest::Client::builder();
@@ -15,7 +16,12 @@ fn client(cb: Option<&str>, ins: bool) -> Result<reqwest::Client> {
     b.build().context("http client")
 }
 
-async fn kid(c: &reqwest::Client, sk: &SigningKey, du: &str) -> Result<(Directory, String)> {
+async fn kid(
+    c: &reqwest::Client,
+    sk: &SigningKey,
+    du: &str,
+    request_timeout: Duration,
+) -> Result<(Directory, String)> {
     let d: serde_json::Value = c
         .get(du)
         .header("User-Agent", USER_AGENT)
@@ -32,6 +38,7 @@ async fn kid(c: &reqwest::Client, sk: &SigningKey, du: &str) -> Result<(Director
         sk,
         &None,
         &dir,
+        request_timeout,
     )
     .await?;
     let loc = hdr
@@ -42,14 +49,30 @@ async fn kid(c: &reqwest::Client, sk: &SigningKey, du: &str) -> Result<(Director
     Ok((dir, loc))
 }
 
-pub async fn show(sk: &SigningKey, du: &str, cb: Option<&str>, ins: bool, v: u8) -> Result<()> {
+pub async fn show(
+    sk: &SigningKey,
+    du: &str,
+    cb: Option<&str>,
+    ins: bool,
+    v: u8,
+    request_timeout: Duration,
+) -> Result<()> {
     let c = client(cb, ins)?;
-    let (dir, k) = kid(&c, sk, du).await?;
+    let (dir, k) = kid(&c, sk, du, request_timeout).await?;
     if v >= 2 {
         eprintln!("[account] GET {}", k);
     }
-    let (info, _, _) =
-        send_signed_request(&c, &k, None, "show", sk, &Some(k.clone()), &dir).await?;
+    let (info, _, _) = send_signed_request(
+        &c,
+        &k,
+        None,
+        "show",
+        sk,
+        &Some(k.clone()),
+        &dir,
+        request_timeout,
+    )
+    .await?;
     println!("{}", serde_json::to_string_pretty(&info)?);
     Ok(())
 }
@@ -61,9 +84,10 @@ pub async fn update(
     cb: Option<&str>,
     ins: bool,
     v: u8,
+    request_timeout: Duration,
 ) -> Result<()> {
     let c = client(cb, ins)?;
-    let (dir, k) = kid(&c, sk, du).await?;
+    let (dir, k) = kid(&c, sk, du, request_timeout).await?;
     if v >= 2 {
         eprintln!("[account] POST {}", k);
     }
@@ -75,8 +99,17 @@ pub async fn update(
             .collect::<Vec<_>>()
             .into();
     }
-    let (info, _, _) =
-        send_signed_request(&c, &k, Some(&p), "update", sk, &Some(k.clone()), &dir).await?;
+    let (info, _, _) = send_signed_request(
+        &c,
+        &k,
+        Some(&p),
+        "update",
+        sk,
+        &Some(k.clone()),
+        &dir,
+        request_timeout,
+    )
+    .await?;
     println!("{}", serde_json::to_string_pretty(&info)?);
     Ok(())
 }
@@ -93,6 +126,7 @@ pub async fn register(
     cb: Option<&str>,
     ins: bool,
     v: u8,
+    request_timeout: Duration,
 ) -> Result<()> {
     let c = client(cb, ins)?;
     let d: serde_json::Value = c
@@ -146,8 +180,17 @@ pub async fn register(
     if v >= 2 {
         eprintln!("[account] POST {}", dir.new_account);
     }
-    let (info, _, hdr) =
-        send_signed_request(&c, &dir.new_account, Some(&p), "register", sk, &None, &dir).await?;
+    let (info, _, hdr) = send_signed_request(
+        &c,
+        &dir.new_account,
+        Some(&p),
+        "register",
+        sk,
+        &None,
+        &dir,
+        request_timeout,
+    )
+    .await?;
     let loc = hdr
         .get("Location")
         .and_then(|v| v.to_str().ok())
@@ -163,9 +206,10 @@ pub async fn unregister(
     cb: Option<&str>,
     ins: bool,
     v: u8,
+    request_timeout: Duration,
 ) -> Result<()> {
     let c = client(cb, ins)?;
-    let (dir, k) = kid(&c, sk, du).await?;
+    let (dir, k) = kid(&c, sk, du, request_timeout).await?;
     if v >= 2 {
         eprintln!("[account] POST {} (deactivate)", k);
     }
@@ -177,6 +221,7 @@ pub async fn unregister(
         sk,
         &Some(k.clone()),
         &dir,
+        request_timeout,
     )
     .await?;
     println!("{}", serde_json::to_string_pretty(&info)?);
@@ -190,9 +235,10 @@ pub async fn change_key(
     cb: Option<&str>,
     ins: bool,
     v: u8,
+    request_timeout: Duration,
 ) -> Result<()> {
     let c = client(cb, ins)?;
-    let (dir, k) = kid(&c, sk, du).await?;
+    let (dir, k) = kid(&c, sk, du, request_timeout).await?;
     let kc_url = dir.key_change.as_deref().unwrap_or(&k); // Pebble uses /rollover-account-key
 
     let new_sk = crate::parse_account_key(new_key_path)?;
@@ -217,7 +263,7 @@ pub async fn change_key(
 
     // Outer JWS: signed by OLD key, payload = inner JWS as raw bytes (not JSON-encoded)
     let outer_payload64 = b64(inner_jws_str.as_bytes());
-    let nonce = crate::get_nonce(&c, &dir).await?;
+    let nonce = crate::get_nonce(&c, &dir, request_timeout).await?;
     let outer_protected = json!({"alg": old_jwk["alg"].as_str().unwrap_or("RS256"), "kid": &k, "nonce": nonce, "url": kc_url});
     let outer_protected64 = b64(serde_json::to_string(&outer_protected)?.as_bytes());
     let outer_signing_input = format!("{outer_protected64}.{outer_payload64}");
