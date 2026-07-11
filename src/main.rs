@@ -41,6 +41,20 @@ fn init_log(log_path: Option<&str>, log_level: u8) -> Result<()> {
     Ok(())
 }
 
+/// Format a response header for diagnostic output. Distinguishes three cases:
+///   - header absent: "<missing>"
+///   - header present, valid UTF-8: the value
+///   - header present, non-UTF-8 bytes: "<binary N bytes>"
+fn header_diag(headers: &reqwest::header::HeaderMap, name: &str) -> String {
+    match headers.get(name) {
+        None => "<missing>".to_string(),
+        Some(v) => v
+            .to_str()
+            .map(String::from)
+            .unwrap_or_else(|_| format!("<binary {} bytes>", v.len())),
+    }
+}
+
 macro_rules! log_request {
     ($($arg:tt)*) => {{
         if let Some(mutex) = LOG_FILE.get() {
@@ -595,21 +609,12 @@ pub(crate) async fn do_request(
             && (json.get("type").and_then(|t| t.as_str())
                 == Some("urn:ietf:params:acme:error:alreadyReplaced")))
     {
-        let location = headers
-            .get("Location")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        let nonce = headers
-            .get("Replay-Nonce")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        let content_type = headers
-            .get("Content-Type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
         bail!(
-            "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nContent-Type: {content_type}\nLocation: {location}\nReplay-Nonce: {nonce}\nResponse: {json}",
-            data_str.as_deref().unwrap_or("None")
+            "{err_msg}:\nUrl: {url}\nData: {}\nResponse Code: {status}\nContent-Type: {}\nLocation: {}\nReplay-Nonce: {}\nResponse: {json}",
+            data_str.as_deref().unwrap_or("None"),
+            header_diag(&headers, "Content-Type"),
+            header_diag(&headers, "Location"),
+            header_diag(&headers, "Replay-Nonce"),
         );
     }
 
@@ -1500,16 +1505,15 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             .iter()
             .find(|c| c["type"].as_str() == Some(challenge_type))
             .ok_or_else(|| anyhow!("No {challenge_type} challenge for {domain}"))?;
+        let token = challenge["token"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing challenge token for {domain}"))?;
         debug!(
             "Selected challenge: url={} type={} token={}",
             challenge["url"].as_str().unwrap_or(""),
             challenge["type"].as_str().unwrap_or(""),
-            challenge["token"].as_str().unwrap_or("")
+            token
         );
-
-        let token = challenge["token"]
-            .as_str()
-            .ok_or_else(|| anyhow!("Missing challenge token"))?;
         let cleaned_token: String = token
             .chars()
             .map(|c| {
