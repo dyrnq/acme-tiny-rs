@@ -191,7 +191,7 @@ struct Cli {
     eab_kid: Option<String>,
 
     /// EAB HMAC Key (base64url-encoded, for External Account Binding)
-    #[arg(long = "eab-hmac-key", value_hint = ValueHint::FilePath)]
+    #[arg(long = "eab-hmac-key")]
     eab_hmac_key: Option<String>,
 
     /// HMAC algorithm for EAB (HS256, HS384, HS512) [default: HS256]
@@ -316,7 +316,7 @@ enum AccountAction {
         #[arg(long = "eab-kid")]
         eab_kid: Option<String>,
         /// EAB HMAC Key (base64url-encoded)
-        #[arg(long = "eab-hmac-key", value_hint = ValueHint::FilePath)]
+        #[arg(long = "eab-hmac-key")]
         eab_hmac_key: Option<String>,
         /// HMAC algorithm for EAB (HS256, HS384, HS512)
         #[arg(long = "eab-hmac-alg", default_value = "HS256")]
