@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -1354,31 +1355,28 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs() as i64;
-                let parse_rfc3339 = |ts: &str| -> i64 {
-                    ts.trim_end_matches('Z')
-                        .replace('T', " ")
-                        .split(' ')
-                        .next()
-                        .map(|d| {
-                            let p: Vec<&str> = d.split('-').collect();
-                            if p.len() == 3 {
-                                let y: i64 = p[0].parse().unwrap_or(1970);
-                                let m: u32 = p[1].parse().unwrap_or(1);
-                                let d: u32 = p[2].parse().unwrap_or(1);
-                                ((y - 1970) * 365 + m as i64 * 30 + d as i64) * 86400
-                            } else {
-                                0
-                            }
-                        })
-                        .unwrap_or(0)
+                let parse_rfc3339 = |ts: &str| -> Option<i64> {
+                    jiff::Timestamp::from_str(ts)
+                        .ok()
+                        .map(|t| t.as_second())
                 };
-                let w_start = start.map(parse_rfc3339).unwrap_or(0);
-                let w_end = end.map(parse_rfc3339).unwrap_or(0);
-                if now_secs < w_start || now_secs > w_end {
-                    info!("ARI: not in renewal window. Skipping issuance.");
-                    return Ok(String::new());
+                let w_start = start.and_then(&parse_rfc3339);
+                let w_end = end.and_then(&parse_rfc3339);
+                match (w_start, w_end) {
+                    (Some(ws), Some(we)) => {
+                        if now_secs < ws || now_secs > we {
+                            info!("ARI: not in renewal window. Skipping issuance.");
+                            return Ok(String::new());
+                        }
+                        info!("ARI: in renewal window. Proceeding.");
+                    }
+                    _ => {
+                        debug!(
+                            "ARI: server returned a malformed window (start={:?}, end={:?}); proceeding without gate",
+                            start, end
+                        );
+                    }
                 }
-                info!("ARI: in renewal window. Proceeding.");
             }
         } else if resp.status() == 404 {
             info!("ARI: no suggestion from server. Proceeding.");

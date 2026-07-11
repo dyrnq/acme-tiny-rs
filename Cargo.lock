@@ -15,6 +15,7 @@ dependencies = [
  "ed25519-dalek",
  "env_logger",
  "hmac",
+ "jiff",
  "log",
  "p256",
  "p384",
