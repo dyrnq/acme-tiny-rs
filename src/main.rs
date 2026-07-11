@@ -55,6 +55,24 @@ fn header_diag(headers: &reqwest::header::HeaderMap, name: &str) -> String {
     }
 }
 
+/// RAII guard for a standalone challenge server (TLS-ALPN-01 or HTTP-01
+/// standalone). Dropping the guard aborts the spawned listener task.
+///
+/// This is critical: dropping a `tokio::task::JoinHandle` does NOT abort the
+/// underlying task — it only severs the result channel. The listener keeps
+/// running and holding the port. A plain `Option<JoinHandle>` with the
+/// underscore-prefix binding pattern used in earlier versions of this code
+/// silently leaked the port on every iteration.
+struct StandaloneServerGuard(Option<tokio::task::JoinHandle<()>>);
+
+impl Drop for StandaloneServerGuard {
+    fn drop(&mut self) {
+        if let Some(h) = self.0.take() {
+            h.abort();
+        }
+    }
+}
+
 macro_rules! log_request {
     ($($arg:tt)*) => {{
         if let Some(mutex) = LOG_FILE.get() {
@@ -1571,18 +1589,19 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             None
         };
 
-        // Standalone server handle — must live until after validation
-        let mut _standalone_server: Option<tokio::task::JoinHandle<()>> = None;
+        // Standalone server handle — RAII guard aborts the listener on every
+        // exit path (loop iteration end, bail, panic unwind).
+        let mut server_guard = StandaloneServerGuard(None);
 
         if challenge_type == "tls-alpn-01" {
             let port = cli.tls_alpn01_port.unwrap_or(443);
-            _standalone_server =
+            server_guard.0 =
                 Some(challenge::tls_alpn::start(&domain, &keyauthorization, port).await?);
             info!("TLS-ALPN-01 server started on port {port} for {domain}");
         } else if challenge_type == "http-01" {
             if cli.standalone {
                 let port = cli.http01_port.unwrap_or(80);
-                _standalone_server =
+                server_guard.0 =
                     Some(challenge::http::start(port, &cleaned_token, &keyauthorization).await?);
                 info!("Standalone HTTP server started on port {port} for {domain}");
             } else {
@@ -1648,7 +1667,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
             poll_until_not(
                 &client,
                 auth_url,
-                &["pending"],
+                &["pending", "processing"],
                 &format!("Error checking challenge status for {domain}"),
                 signing_key,
                 &acct_location,
@@ -1664,7 +1683,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
                 Path::new(cli.acme_dir.as_deref().unwrap_or(".")).join(&cleaned_token);
             let _ = fs::remove_file(&wellknown_path);
         }
-        // http-standalone / tls-alpn-01: cleanup is automatic — server handle drops here
+        // http-standalone / tls-alpn-01: cleanup is automatic — server_guard drops here
         if let Some((eff_domain, txt_val)) = dns_cleanup_info {
             let _ = dns::create_provider(&cli.dns_provider)
                 .and_then(|p| p.cleanup(&eff_domain, &txt_val));
