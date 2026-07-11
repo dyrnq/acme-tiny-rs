@@ -735,14 +735,30 @@ async fn send_signed_request_inner(
     let data = serde_json::to_vec(&jws)?;
     let result = do_request(client, url, Some(data), err_msg).await?;
 
-    // Handle badNonce retry (up to 100 retries like the python version)
+    // Handle badNonce retry (RFC 8555 §6.5: client SHOULD use a fresh nonce
+    // on each request). When the CA evicts a nonce from its cache between our
+    // HEAD and POST we can race and lose. Limit retries and back off so we
+    // don't hammer the CA while it's regenerating nonces.
     if result.1 == reqwest::StatusCode::BAD_REQUEST
         && (result.0.get("type").and_then(|t| t.as_str())
             == Some("urn:ietf:params:acme:error:badNonce"))
     {
-        if depth >= 100 {
-            bail!("Too many badNonce retries");
+        const MAX_NONCE_RETRIES: u32 = 5;
+        if depth >= MAX_NONCE_RETRIES {
+            bail!(
+                "Too many badNonce retries ({MAX_NONCE_RETRIES}) — server may be \
+                 misconfigured or overloaded; giving up"
+            );
         }
+        // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms.
+        let delay = Duration::from_millis(100u64 << depth);
+        debug!(
+            "badNonce on {} (depth {}), retrying after {}ms",
+            url,
+            depth,
+            delay.as_millis()
+        );
+        tokio::time::sleep(delay).await;
         return Box::pin(send_signed_request_inner(
             client,
             url,
