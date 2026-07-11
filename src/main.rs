@@ -585,6 +585,23 @@ pub(crate) async fn do_request(
     reqwest::StatusCode,
     reqwest::header::HeaderMap,
 )> {
+    do_request_inner(client, url, data, err_msg, request_timeout, 0).await
+}
+
+const MAX_RATE_LIMIT_RETRIES: u32 = 5;
+
+async fn do_request_inner(
+    client: &reqwest::Client,
+    url: &str,
+    data: Option<Vec<u8>>,
+    err_msg: &str,
+    request_timeout: Duration,
+    depth: u32,
+) -> Result<(
+    serde_json::Value,
+    reqwest::StatusCode,
+    reqwest::header::HeaderMap,
+)> {
     let data_str = data
         .as_ref()
         .map(|d| String::from_utf8_lossy(d).to_string());
@@ -598,7 +615,8 @@ pub(crate) async fn do_request(
     }
 
     let send_fut = async {
-        if let Some(body) = data {
+        // Clone the body so we keep an owned copy for the 429-retry path.
+        if let Some(body) = data.clone() {
             client
                 .post(url)
                 .header("Content-Type", "application/jose+json")
@@ -623,6 +641,37 @@ pub(crate) async fn do_request(
 
     let status = resp.status();
     let headers = resp.headers().clone();
+
+    // Handle HTTP 429 (rate limited) — sleep Retry-After then retry.
+    // Boulder enforces per-account and per-IP rate limits and signals the
+    // backoff window via RFC 7231 §7.1.3 Retry-After (delta-seconds form).
+    // Retrying here means an unattended cron run that hits the limit will
+    // wait and succeed instead of failing hard.
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let retry_secs = parse_retry_after_secs(&headers).unwrap_or(60);
+        if depth + 1 >= MAX_RATE_LIMIT_RETRIES {
+            bail!(
+                "{err_msg}: rate-limited (HTTP 429) on {url} and exhausted \
+                 {MAX_RATE_LIMIT_RETRIES} retries; last Retry-After={retry_secs}s"
+            );
+        }
+        info!(
+            "Rate-limited on {url}; sleeping {retry_secs}s before retry ({}/{})",
+            depth + 1,
+            MAX_RATE_LIMIT_RETRIES
+        );
+        tokio::time::sleep(Duration::from_secs(retry_secs)).await;
+        return Box::pin(do_request_inner(
+            client,
+            url,
+            data,
+            err_msg,
+            request_timeout,
+            depth + 1,
+        ))
+        .await;
+    }
+
     let body_text = tokio::time::timeout(request_timeout, resp.text())
         .await
         .map(|r| r.unwrap_or_default())
@@ -654,6 +703,19 @@ pub(crate) async fn do_request(
     }
 
     Ok((json, status, headers))
+}
+
+/// Parse RFC 7231 §7.1.3 Retry-After header. Supports the delta-seconds form
+/// (a non-negative integer). Returns None if missing, malformed, or out of
+/// the sane range (capped at 1 day to prevent pathologically long sleeps).
+fn parse_retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    const MAX_RETRY_AFTER_SECS: u64 = 86_400; // 1 day
+    let v = headers.get("Retry-After")?.to_str().ok()?;
+    let secs: u64 = v.trim().parse().ok()?;
+    if secs > MAX_RETRY_AFTER_SECS {
+        return Some(MAX_RETRY_AFTER_SECS);
+    }
+    Some(secs)
 }
 
 // ---------------------------------------------------------------------------
