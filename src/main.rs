@@ -1449,6 +1449,9 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
         .ok_or_else(|| anyhow!("Missing order Location header"))?;
+    let finalize_url = order["finalize"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Missing finalize URL in order"))?;
 
     info!("Order created!");
 
@@ -1461,9 +1464,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         .collect();
     debug!(
         "Order details: order_url={} finalize_url={} authorizations={}",
-        order_location,
-        order.get("finalize").and_then(|f| f.as_str()).unwrap_or(""),
-        authorizations.len()
+        order_location, finalize_url, authorizations.len()
     );
 
     for auth_url in &authorizations {
@@ -1689,13 +1690,9 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         "csr": b64(&csr_der),
     });
 
-    let finalize_url = order["finalize"]
-        .as_str()
-        .ok_or_else(|| anyhow!("Missing finalize URL in order"))?;
     debug!(
         "Finalizing order: order_url={} finalize_url={}",
-        order_location,
-        finalize_url
+        order_location, finalize_url
     );
     send_signed_request(
         &client,
