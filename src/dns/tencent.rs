@@ -7,7 +7,7 @@ use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::dns::DnsProvider;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -34,7 +34,14 @@ impl TencentDns {
     }
 
     fn sha256hex(data: &str) -> String {
-        format!("{:x}", Sha256::digest(data.as_bytes()))
+        Sha256::digest(data.as_bytes())
+            .as_slice()
+            .iter()
+            .fold(String::with_capacity(64), |mut s, b| {
+                use std::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            })
     }
 
     fn hmac_sign(key: &[u8], data: &str) -> Vec<u8> {

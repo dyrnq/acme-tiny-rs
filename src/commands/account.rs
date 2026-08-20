@@ -155,7 +155,7 @@ pub async fn register(
         let dk = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(hk.as_bytes())
             .context("eab key")?;
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         let sig: Vec<u8> = match eha {
             "HS256" => {
                 let mut m = Hmac::<sha2::Sha256>::new_from_slice(&dk)?;

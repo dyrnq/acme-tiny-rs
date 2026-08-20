@@ -14,9 +14,9 @@ use p384::ecdsa::SigningKey as P384SigningKey;
 use p384::SecretKey as P384SecretKey;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs1v15;
-use rsa::pkcs8::DecodePrivateKey;
 use rsa::traits::PublicKeyParts;
 use rsa::RsaPrivateKey;
+use pkcs8::DecodePrivateKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use signature::{SignatureEncoding, Signer};
@@ -544,7 +544,7 @@ impl SigningKey {
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
         match self {
             SigningKey::Rsa { key, .. } => {
-                let signing_key = pkcs1v15::SigningKey::<Sha256>::new(key.clone());
+                let signing_key = pkcs1v15::SigningKey::<sha2::Sha256>::new(key.clone());
                 Ok(signing_key.sign(data).to_vec())
             }
             SigningKey::EcdsaP256 { key, .. } => {
@@ -967,8 +967,8 @@ fn parse_rsa_key(pem_data: &str) -> Result<SigningKey> {
     let n = public_key.n();
     let e = public_key.e();
 
-    let n_bytes = n.to_bytes_be();
-    let e_bytes = e.to_bytes_be();
+    let n_bytes = n.to_be_bytes();
+    let e_bytes = e.to_be_bytes();
 
     let jwk = serde_json::json!({
         "e": b64(&e_bytes),
@@ -1009,7 +1009,7 @@ fn parse_ec_key(pem_data: &str) -> Result<SigningKey> {
 fn build_ec_p256_key(secret: P256SecretKey) -> Result<SigningKey> {
     let signing_key = P256SigningKey::from(secret);
     let verifying_key = signing_key.verifying_key();
-    let point = verifying_key.to_encoded_point(false);
+    let point = verifying_key.to_sec1_point(false);
     let jwk = serde_json::json!({
         "crv": "P-256",
         "kty": "EC",
@@ -1025,7 +1025,7 @@ fn build_ec_p256_key(secret: P256SecretKey) -> Result<SigningKey> {
 fn build_ec_p384_key(secret: P384SecretKey) -> Result<SigningKey> {
     let signing_key = P384SigningKey::from(secret);
     let verifying_key = signing_key.verifying_key();
-    let point = verifying_key.to_encoded_point(false);
+    let point = verifying_key.to_sec1_point(false);
     let jwk = serde_json::json!({
         "crv": "P-384",
         "kty": "EC",
@@ -1420,7 +1420,7 @@ async fn get_crt(cli: &Cli, signing_key: &SigningKey, domains: &[String]) -> Res
         let decoded_key = URL_SAFE_NO_PAD
             .decode(hmac_key.as_bytes())
             .context("EAB HMAC key is not valid base64url")?;
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         let sig: Vec<u8> = match cli.eab_hmac_alg.as_str() {
             "HS256" => {
                 let mut mac = Hmac::<sha2::Sha256>::new_from_slice(&decoded_key)

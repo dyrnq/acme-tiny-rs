@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail, Result};
 use std::env;
 
 use crate::dns::DnsProvider;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -33,7 +33,14 @@ impl AwsRoute53Dns {
     }
 
     fn hex_digest(data: &[u8]) -> String {
-        format!("{:x}", Sha256::digest(data))
+        Sha256::digest(data)
+            .as_slice()
+            .iter()
+            .fold(String::with_capacity(64), |mut s, b| {
+                use std::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            })
     }
 
     fn hmac_sign(secret: &[u8], data: &[u8]) -> Vec<u8> {
