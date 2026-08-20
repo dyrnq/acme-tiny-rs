@@ -571,6 +571,23 @@ pub(crate) fn b64(data: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(data)
 }
 
+/// Strip leading zero bytes from a big-endian integer byte slice.
+///
+/// RFC 7518 §6.2.1.1 (JWA): integers in JWKs MUST use the *minimum* number of
+/// bytes — leading zero bytes are forbidden. `to_be_bytes()` in
+/// crypto-bigint 0.7 returns a fixed-size `EncodedUint<LIMBS>` which keeps
+/// leading zeros; e.g. `e = 65537` comes back as 8 bytes `[0,0,0,0,0,0,1,0,1]`
+/// instead of the canonical 3-byte `[1,0,1]`. Use this before base64url-encoding
+/// JWK `n` and `e`. Returns a single `0x00` byte if the input is all zeros.
+fn strip_leading_zeros(data: &[u8]) -> Vec<u8> {
+    let trimmed: Vec<u8> = data.iter().copied().skip_while(|&b| b == 0).collect();
+    if trimmed.is_empty() {
+        vec![0]
+    } else {
+        trimmed
+    }
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helper
 // ---------------------------------------------------------------------------
@@ -967,8 +984,8 @@ fn parse_rsa_key(pem_data: &str) -> Result<SigningKey> {
     let n = public_key.n();
     let e = public_key.e();
 
-    let n_bytes = n.to_be_bytes();
-    let e_bytes = e.to_be_bytes();
+    let n_bytes = strip_leading_zeros(&n.to_be_bytes());
+    let e_bytes = strip_leading_zeros(&e.to_be_bytes());
 
     let jwk = serde_json::json!({
         "e": b64(&e_bytes),
