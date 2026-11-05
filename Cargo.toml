@@ -25,7 +25,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 # RSA key parsing and signing (native Rust, no OpenSSL)
 rsa = { version = "0.10.0-rc.18", features = ["encoding"] }
 pkcs8 = { version = "0.11", features = ["pem"] }
-pkcs1 = "0.7"
+pkcs1 = "0.8"
 pem = "4"
 
 # ECDSA key support (P-256, P-384)
