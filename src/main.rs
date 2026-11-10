@@ -15,7 +15,7 @@ use p384::SecretKey as P384SecretKey;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs1v15;
 use rsa::traits::PublicKeyParts;
-use rsa::RsaPrivateKey;
+use rsa::PrivateKey;
 use pkcs8::DecodePrivateKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -505,7 +505,7 @@ struct JwsBody {
 
 pub(crate) enum SigningKey {
     Rsa {
-        key: RsaPrivateKey,
+        key: PrivateKey,
         jwk: serde_json::Value,
     },
     EcdsaP256 {
@@ -976,8 +976,8 @@ fn primary_pem_tag(pem_data: &str) -> Option<String> {
 }
 
 fn parse_rsa_key(pem_data: &str) -> Result<SigningKey> {
-    let private_key = RsaPrivateKey::from_pkcs1_pem(pem_data)
-        .or_else(|_| RsaPrivateKey::from_pkcs8_pem(pem_data))
+    let private_key = PrivateKey::from_pkcs1_pem(pem_data)
+        .or_else(|_| PrivateKey::from_pkcs8_pem(pem_data))
         .context("Failed to parse RSA private key (tried PKCS#1 and PKCS#8 PEM formats)")?;
 
     let public_key = private_key.to_public_key();
