@@ -49,8 +49,12 @@ x509-parser = "0.18"
 # DER encoding for CSR
 der = "0.8"
 
-# Date/time parsing for ARI renewal windows (RFC 3339 / ISO 8601)
-jiff = { version = "0.2", default-features = false, features = ["std"] }
+# Date/time parsing for ARI renewal windows (RFC 3339 / ISO 8601).
+# jiff 1.0 is required by env_logger 0.11.12 (jiff = "^1.0.1"). The only
+# API we use is Timestamp::from_str / Timestamp::as_second, and jiff 1.0's
+# breaking changes (Zoned -> ZonedDateTime, fallible Timestamp -> SystemTime
+# conversions, sealed ToSpan, ...) don't touch either of them.
+jiff = { version = "1", default-features = false, features = ["std"] }
 
 # Serde for JSON
 serde = { version = "1", features = ["derive"] }
